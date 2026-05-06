@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Usuários · Topshop Amazon System{% endblock %}
+
+{% block breadcrumb %}
+<span class="topbar__crumb">Administração</span>
+<span class="topbar__chev">/</span>
+<span class="topbar__crumb topbar__crumb--current">Usuários</span>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card__header">
+        <div>
+            <h1 class="card__title">Usuários</h1>
+            <p class="card__lead">Gerencie acessos e gere convites.</p>
+        </div>
+        <button class="btn btn--primary" id="btn-novo-convite">+ Convidar usuário</button>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Status</th><th>Último login</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for u in usuarios %}
+            <tr data-id="{{ u.id }}">
+                <td>{{ u.nome }}</td>
+                <td>{{ u.email }}</td>
+                <td><span class="badge badge--{{ 'warning' if u.papel == 'admin' else 'info' }}">{{ u.papel }}</span></td>
+                <td>{% if u.ativo %}<span class="badge badge--success">ativo</span>{% else %}<span class="badge badge--danger">desativado</span>{% endif %}</td>
+                <td>{% if u.ultimo_login %}{{ u.ultimo_login.strftime('%d/%m/%Y %H:%M') }}{% else %}—{% endif %}</td>
+                <td class="row-actions">
+                    {% if u.papel == 'usuario' %}
+                    <button class="btn btn--xs" data-action="promover" data-id="{{ u.id }}">↑ admin</button>
+                    {% else %}
+                    <button class="btn btn--xs" data-action="rebaixar" data-id="{{ u.id }}">↓ usuário</button>
+                    {% endif %}
+                    {% if u.ativo %}
+                    <button class="btn btn--xs btn--danger" data-action="desativar" data-id="{{ u.id }}">desativar</button>
+                    {% else %}
+                    <button class="btn btn--xs btn--success" data-action="ativar" data-id="{{ u.id }}">ativar</button>
+                    {% endif %}
+                    <button class="btn btn--xs btn--ghost" data-action="reset-senha" data-id="{{ u.id }}">reset senha</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if convites %}
+<div class="card">
+    <h2 class="card__title">Convites pendentes</h2>
+    <table class="table">
+        <thead>
+            <tr><th>E-mail</th><th>Papel</th><th>Criado em</th><th>Expira</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for c in convites %}
+            <tr data-id="{{ c.id }}">
+                <td>{{ c.email }}</td>
+                <td><span class="badge badge--{{ 'warning' if c.papel == 'admin' else 'info' }}">{{ c.papel }}</span></td>
+                <td>{{ c.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+                <td>{{ c.expira_em.strftime('%d/%m/%Y %H:%M') }}{% if c.esta_expirado %} <span class="badge badge--danger">expirado</span>{% endif %}</td>
+                <td class="row-actions">
+                    <button class="btn btn--xs btn--danger" data-action="revogar-convite" data-id="{{ c.id }}">revogar</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Modal convite -->
+<div class="modal" id="modal-convite" hidden>
+    <div class="modal__backdrop" data-close></div>
+    <div class="modal__panel">
+        <h2 class="modal__title">Convidar usuário</h2>
+        <form id="form-convite" method="POST" action="{{ url_for('admin.criar_convite') }}">
+            {{ form.hidden_tag() }}
+            <label class="field">
+                <span class="field__label">E-mail</span>
+                {{ form.email(class_="field__input", required=True) }}
+            </label>
+            <label class="field">
+                <span class="field__label">Papel</span>
+                {{ form.papel(class_="field__input") }}
+            </label>
+            <div class="modal__actions">
+                <button type="button" class="btn btn--ghost" data-close>Cancelar</button>
+                <button type="submit" class="btn btn--primary">Gerar link</button>
+            </div>
+        </form>
+        <div id="modal-convite-resultado" hidden>
+            <div class="alert alert--success">Convite criado.</div>
+            <label class="field">
+                <span class="field__label">Link (válido por <span id="exp-h">48</span>h)</span>
+                <input id="link-convite" class="field__input" readonly>
+            </label>
+            <button type="button" class="btn btn--primary" id="btn-copiar-link">Copiar link</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/admin_usuarios.js') }}"></script>
+{% endblock %}

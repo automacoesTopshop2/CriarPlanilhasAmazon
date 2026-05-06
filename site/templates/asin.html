@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Criar por ASIN · Planilhas Amazon{% endblock %}
+
+{% block breadcrumb %}
+<span class="topbar__crumb">Sistema</span>
+<span class="topbar__chev">/</span>
+<a href="{{ url_for('home') }}" class="topbar__crumb">Módulos</a>
+<span class="topbar__chev">/</span>
+<span class="topbar__crumb topbar__crumb--current">Criar por ASIN</span>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <h1>Criar planilha por ASIN</h1>
+    <p>Pipeline rápido para vincular ASINs já catalogados — preenche somente preço, dimensões e peso.</p>
+</div>
+
+<div class="card mb-6">
+    <div class="card__body info-card-row">
+        <div class="info-card-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        </div>
+        <div>
+            <div class="fw-600">Formato esperado</div>
+            <div class="text-muted text-sm mt-2">
+                A planilha de entrada deve ter <strong>Coluna A = ASIN</strong> e <strong>Coluna B = SKU</strong>.
+                O template ListaASINS deve estar no formato <code>.xlsm</code>.
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card__header">
+        <div>
+            <div class="card__title">Arquivos</div>
+            <div class="card__sub">Envie a lista de ASINs e o template ListaASINS.</div>
+        </div>
+    </div>
+    <div class="card__body">
+        <div class="grid grid--2">
+            <div class="field">
+                <span class="label">1. Lista ASINs (CriarASIN.xlsx)</span>
+                {% include "_dropzone.html" %}
+            </div>
+            <div class="field">
+                <span class="label">2. Modelo ListaASINS (.xlsm)</span>
+                {% with id_suffix="template", accept=".xlsm", label="Solte o template Amazon", sublabel="ou clique para selecionar (.xlsm)" %}
+                    {% include "_dropzone.html" %}
+                {% endwith %}
+            </div>
+        </div>
+    </div>
+    <div class="card__footer">
+        <button id="btn-processar" class="btn btn--primary" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Processar ASINs
+        </button>
+    </div>
+</div>
+
+<div id="processing" class="card mt-6 hide">
+    <div class="card__header">
+        <div>
+            <div class="card__title">Processando...</div>
+            <div id="processing-status" class="card__sub">Aguardando início.</div>
+        </div>
+        <span id="processing-badge" class="badge badge--info">em execução</span>
+    </div>
+    <div class="card__body">
+        <div class="progress"><div id="progress-bar" class="progress__bar"></div></div>
+        <div id="console" class="console mt-3"></div>
+    </div>
+</div>
+
+<div id="result-host" class="mt-6"></div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce() }}">
+    initProcessamento({
+        endpoint: "{{ url_for('api_processar_asin') }}",
+        camposArquivos: { arquivo_entrada: 'entrada', arquivo_template: 'template' },
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Criar conta · Topshop Amazon System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="auth-body">
+    <div class="auth-card">
+        <div class="auth-card__brand">
+            <div class="auth-card__mark">T</div>
+            <div>
+                <div class="auth-card__name">Topshop Amazon</div>
+                <div class="auth-card__sub">System</div>
+            </div>
+        </div>
+
+        <h1 class="auth-card__title">Criar sua conta</h1>
+        <p class="auth-card__lead">
+            Convite para <strong>{{ email }}</strong>
+            <span class="badge badge--{{ 'warning' if papel == 'admin' else 'info' }}">{{ papel }}</span>
+        </p>
+
+        {% if erro %}<div class="alert alert--danger">{{ erro }}</div>{% endif %}
+
+        <form method="POST" action="{{ url_for('auth.registro', token=token) }}" novalidate>
+            {{ form.hidden_tag() }}
+
+            <label class="field">
+                <span class="field__label">Nome</span>
+                {{ form.nome(class_="field__input", autocomplete="name", autofocus=True) }}
+                {% for e in form.nome.errors %}<span class="field__error">{{ e }}</span>{% endfor %}
+            </label>
+
+            <label class="field">
+                <span class="field__label">Senha</span>
+                {{ form.senha(class_="field__input", autocomplete="new-password") }}
+                <span class="field__hint">Mínimo 10 caracteres, com letra e número.</span>
+                {% for e in form.senha.errors %}<span class="field__error">{{ e }}</span>{% endfor %}
+            </label>
+
+            <label class="field">
+                <span class="field__label">Confirmar senha</span>
+                {{ form.confirmacao(class_="field__input", autocomplete="new-password") }}
+                {% for e in form.confirmacao.errors %}<span class="field__error">{{ e }}</span>{% endfor %}
+            </label>
+
+            <button type="submit" class="btn btn--primary btn--lg btn--block">Criar conta e entrar</button>
+        </form>
+    </div>
+</body>
+</html>

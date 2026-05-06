@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+{% block title %}Configurações · Topshop Amazon System{% endblock %}
+
+{% block breadcrumb %}
+<span class="topbar__crumb">Administração</span>
+<span class="topbar__chev">/</span>
+<span class="topbar__crumb topbar__crumb--current">Configurações</span>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1 class="card__title">Configurações do sistema</h1>
+    <p class="card__lead">Edite mapeamentos e valores fixos sem mexer em código. Alterações se aplicam imediatamente nos próximos processamentos.</p>
+
+    <div class="tabs" id="config-tabs">
+        <button class="tab is-active" data-tab="arquivos">Arquivos & Imagens</button>
+        <button class="tab" data-tab="valores">Valores Fixos</button>
+        <button class="tab" data-tab="colunas">Mapeamento de Colunas</button>
+        <button class="tab" data-tab="precificacao">Mapeamento Precificação</button>
+        <button class="tab" data-tab="prefixos">Prefixos de Conta</button>
+        <button class="tab" data-tab="onedrive">OneDrive</button>
+    </div>
+
+    <!-- Tab: arquivos ------------------------------------------------ -->
+    <section class="tab-panel is-active" data-panel="arquivos">
+        <h2 class="card__section-title">Arquivos das bases</h2>
+        <p class="card__hint">Caminhos relativos resolvem a partir da raiz do projeto.</p>
+        <form id="form-arquivos" class="form-grid">
+            <label class="field">
+                <span class="field__label">Arquivo de Precificação</span>
+                <input class="field__input" name="arquivo_precificacao" value="{{ snapshot.arquivos.arquivo_precificacao }}">
+            </label>
+            <label class="field">
+                <span class="field__label">Arquivo de Descrição</span>
+                <input class="field__input" name="arquivo_descricao" value="{{ snapshot.arquivos.arquivo_descricao }}">
+            </label>
+            <label class="field">
+                <span class="field__label">Termos a Remover</span>
+                <input class="field__input" name="arquivo_remover" value="{{ snapshot.arquivos.arquivo_remover }}">
+            </label>
+            <label class="field">
+                <span class="field__label">Termos a Substituir</span>
+                <input class="field__input" name="arquivo_substituir" value="{{ snapshot.arquivos.arquivo_substituir }}">
+            </label>
+            <label class="field field--full">
+                <span class="field__label">URL base de imagens</span>
+                <input class="field__input" name="url_base_imagens" value="{{ snapshot.arquivos.url_base_imagens }}">
+            </label>
+            <div class="form-grid__actions">
+                <button type="submit" class="btn btn--primary">Salvar arquivos</button>
+            </div>
+        </form>
+    </section>
+
+    <!-- Tab: valores fixos ------------------------------------------- -->
+    <section class="tab-panel" data-panel="valores">
+        <div class="card__header">
+            <div>
+                <h2 class="card__section-title">Valores fixos do template</h2>
+                <p class="card__hint">Insere automaticamente o valor na coluna correspondente do template (ex.: ANATEL, garantia, frete).</p>
+            </div>
+            <button class="btn btn--primary" id="btn-novo-valor-fixo">+ Novo valor</button>
+        </div>
+        <table class="table">
+            <thead><tr><th>Coluna</th><th>Valor</th><th></th></tr></thead>
+            <tbody id="tbody-valores">
+                {% for nome, valor in snapshot.valores_fixos.items()|sort %}
+                <tr data-nome="{{ nome }}">
+                    <td><code>{{ nome }}</code></td>
+                    <td>{{ valor }}</td>
+                    <td class="row-actions">
+                        <button class="btn btn--xs" data-action="editar-valor">editar</button>
+                        {% if nome in snapshot.valores_fixos_customizados %}
+                        <button class="btn btn--xs btn--danger" data-action="remover-valor">remover</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <!-- Tab: mapa de colunas (descrição) ----------------------------- -->
+    <section class="tab-panel" data-panel="colunas">
+        <h2 class="card__section-title">Sinônimos de colunas — Planilha de Descrição</h2>
+        <p class="card__hint">
+            Para cada campo lógico, lista os possíveis nomes de coluna que aparecem nas planilhas de
+            descrição (ex.: o campo <code>titulo</code> pode aparecer como "TÍTULO AMAZON", "Título MLB", etc.).
+            Quando a Amazon mudar nomes ou aparecer um template novo, adicione aqui sem mexer no código.
+        </p>
+
+        <div id="mapa-colunas-host">
+            {% for chave, lista in snapshot.mapa_colunas.items()|sort %}
+            <div class="map-block" data-chave="{{ chave }}" data-mapa="descricao">
+                <div class="map-block__head">
+                    <code class="map-block__key">{{ chave }}</code>
+                    <button class="btn btn--xs btn--ghost" data-action="remover-chave-coluna">remover campo</button>
+                </div>
+                <div class="chips">
+                    {% for sinonimo in lista %}
+                    <span class="chip" data-sinonimo="{{ sinonimo }}">
+                        {{ sinonimo }}
+                        <button data-action="remover-sinonimo" title="Remover">×</button>
+                    </span>
+                    {% endfor %}
+                    <form class="chip-form" data-chave="{{ chave }}" data-mapa="descricao">
+                        <input class="chip-form__input" placeholder="+ adicionar sinônimo">
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <h3 class="card__section-title">Adicionar novo campo lógico</h3>
+        <form id="form-nova-chave-coluna" class="form-inline" data-mapa="descricao">
+            <input class="field__input" id="nova-chave-coluna" placeholder="ex.: novo_campo">
+            <input class="field__input" id="primeiro-sinonimo" placeholder="primeiro sinônimo">
+            <button type="submit" class="btn btn--primary">Adicionar</button>
+        </form>
+    </section>
+
+    <!-- Tab: mapa de colunas (precificação) -------------------------- -->
+    <section class="tab-panel" data-panel="precificacao">
+        <h2 class="card__section-title">Sinônimos de colunas — Planilha de Precificação</h2>
+        <p class="card__hint">
+            Define os possíveis nomes para a coluna de <code>sku</code> (chave de busca) e para a
+            coluna de <code>preco_padrao</code> na planilha de preços. Para mudar a coluna por conta
+            (ex.: "Nogora", "Beta"), use a aba <strong>Prefixos de Conta</strong>.
+        </p>
+
+        <div id="mapa-precificacao-host">
+            {% for chave, lista in snapshot.mapa_precificacao.items()|sort %}
+            <div class="map-block" data-chave="{{ chave }}" data-mapa="precificacao">
+                <div class="map-block__head">
+                    <code class="map-block__key">{{ chave }}</code>
+                    <button class="btn btn--xs btn--ghost" data-action="remover-chave-coluna">remover campo</button>
+                </div>
+                <div class="chips">
+                    {% for sinonimo in lista %}
+                    <span class="chip" data-sinonimo="{{ sinonimo }}">
+                        {{ sinonimo }}
+                        <button data-action="remover-sinonimo" title="Remover">×</button>
+                    </span>
+                    {% endfor %}
+                    <form class="chip-form" data-chave="{{ chave }}" data-mapa="precificacao">
+                        <input class="chip-form__input" placeholder="+ adicionar sinônimo">
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <h3 class="card__section-title">Adicionar novo campo lógico</h3>
+        <form id="form-nova-chave-precificacao" class="form-inline" data-mapa="precificacao">
+            <input class="field__input" id="nova-chave-precificacao" placeholder="ex.: novo_campo">
+            <input class="field__input" id="primeiro-sinonimo-precificacao" placeholder="primeiro sinônimo">
+            <button type="submit" class="btn btn--primary">Adicionar</button>
+        </form>
+    </section>
+
+    <!-- Tab: prefixos ------------------------------------------------ -->
+    <section class="tab-panel" data-panel="prefixos">
+        <div class="card__header">
+            <div>
+                <h2 class="card__section-title">Prefixos de Conta</h2>
+                <p class="card__hint">
+                    Cada prefixo de SKU determina qual coluna da planilha de preços usar.
+                    Quando uma conta nova entrar na precificação, adicione o prefixo correspondente.
+                </p>
+            </div>
+        </div>
+
+        <table class="table">
+            <thead><tr><th>Prefixo</th><th>Conta</th><th></th></tr></thead>
+            <tbody id="tbody-prefixos">
+                {% for pref, conta in snapshot.mapa_prefixo.items()|sort %}
+                <tr data-prefixo="{{ pref }}" data-conta="{{ conta }}">
+                    <td><code>{{ pref }}</code></td>
+                    <td>{{ conta }}</td>
+                    <td class="row-actions">
+                        <button class="btn btn--xs" data-action="editar-prefixo">editar</button>
+                        {% if pref in snapshot.mapa_prefixo_customizados %}
+                        <button class="btn btn--xs btn--danger" data-action="remover-prefixo">remover</button>
+                        {% else %}
+                        <span class="text-muted">padrão</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <h3 class="card__section-title">Adicionar prefixo</h3>
+        <form id="form-novo-prefixo" class="form-inline">
+            <input class="field__input" id="input-prefixo" placeholder="ex.: NOVA-" maxlength="10">
+            <input class="field__input" id="input-conta" placeholder="ex.: NovaConta">
+            <button type="submit" class="btn btn--primary">Adicionar</button>
+        </form>
+    </section>
+
+    <!-- Tab: onedrive ------------------------------------------------ -->
+    <section class="tab-panel" data-panel="onedrive">
+        <h2 class="card__section-title">Caminhos do OneDrive</h2>
+        <p class="card__hint">Lista de caminhos onde o sistema procura o arquivo de Precificação para sincronizar.</p>
+        <div id="onedrive-list">
+            {% for caminho in snapshot.onedrive %}
+            <div class="form-row">
+                <input class="field__input" value="{{ caminho }}">
+                <button class="btn btn--xs btn--danger" data-action="remover-onedrive">×</button>
+            </div>
+            {% endfor %}
+        </div>
+        <button class="btn btn--ghost" id="btn-add-onedrive">+ Adicionar caminho</button>
+        <button class="btn btn--primary" id="btn-salvar-onedrive">Salvar lista</button>
+    </section>
+</div>
+
+<!-- modal genérico -->
+<div class="modal" id="modal-valor" hidden>
+    <div class="modal__backdrop" data-close></div>
+    <div class="modal__panel">
+        <h2 class="modal__title" id="modal-valor-titulo">Novo valor fixo</h2>
+        <form id="form-valor">
+            <label class="field">
+                <span class="field__label">Nome da coluna</span>
+                <input class="field__input" id="valor-nome" required>
+            </label>
+            <label class="field">
+                <span class="field__label">Valor</span>
+                <input class="field__input" id="valor-valor">
+            </label>
+            <input type="hidden" id="valor-nome-original">
+            <div class="modal__actions">
+                <button type="button" class="btn btn--ghost" data-close>Cancelar</button>
+                <button type="submit" class="btn btn--primary">Salvar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- modal: editar prefixo -->
+<div class="modal" id="modal-prefixo" hidden>
+    <div class="modal__backdrop" data-close></div>
+    <div class="modal__panel">
+        <h2 class="modal__title">Editar prefixo</h2>
+        <form id="form-editar-prefixo">
+            <label class="field">
+                <span class="field__label">Prefixo</span>
+                <input class="field__input" id="prefixo-edit-nome" required maxlength="10">
+            </label>
+            <label class="field">
+                <span class="field__label">Conta</span>
+                <input class="field__input" id="prefixo-edit-conta" required>
+            </label>
+            <input type="hidden" id="prefixo-edit-original">
+            <div class="modal__actions">
+                <button type="button" class="btn btn--ghost" data-close>Cancelar</button>
+                <button type="submit" class="btn btn--primary">Salvar</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/admin_configuracoes.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Criar por SKU · Planilhas Amazon{% endblock %}
+
+{% block breadcrumb %}
+<span class="topbar__crumb">Sistema</span>
+<span class="topbar__chev">/</span>
+<a href="{{ url_for('home') }}" class="topbar__crumb">Módulos</a>
+<span class="topbar__chev">/</span>
+<span class="topbar__crumb topbar__crumb--current">Criar por SKU</span>
+{% endblock %}
+
+{% block topbar_right %}
+{% if not (bases.precificacao.existe and bases.descricao.existe) %}
+<span class="badge badge--warn">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/><circle cx="12" cy="12" r="10"/></svg>
+    Verifique as bases na barra lateral
+</span>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <h1>Criar planilha por SKU</h1>
+    <p>Preencha o template Amazon a partir de uma lista de SKUs, com preços e descrições aplicados automaticamente.</p>
+</div>
+
+<!-- ============= STEPS ============= -->
+<div class="steps">
+    <div class="step is-active" data-step="1">
+        <span class="step__num">1</span>
+        <span>Categoria</span>
+    </div>
+    <div class="step__line"></div>
+    <div class="step" data-step="2">
+        <span class="step__num">2</span>
+        <span>Arquivos</span>
+    </div>
+    <div class="step__line"></div>
+    <div class="step" data-step="3">
+        <span class="step__num">3</span>
+        <span>Processar</span>
+    </div>
+</div>
+
+<!-- ============= FORM ============= -->
+<div class="card">
+    <div class="card__header">
+        <div>
+            <div class="card__title">Configuração da criação</div>
+            <div class="card__sub">Selecione a categoria e envie a planilha de SKUs + o template NOGORA.</div>
+        </div>
+    </div>
+
+    <div class="card__body">
+        <div class="grid grid--2">
+            <div class="field">
+                <label class="label" for="categoria">Categoria <span class="label__hint">determina os valores fixos do template</span></label>
+                <select id="categoria" class="select">
+                    <option value="padrao">Criar Padrão (AUDIO_OR_VIDEO)</option>
+                    <option value="brinquedos">Criar Brinquedos (TOYS)</option>
+                    <option value="potes">Criar Potes de Vidro (HOME)</option>
+                    <option value="suplementos">Criar Suplementos (HEALTH)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="grid grid--2 mt-6">
+            <!-- Dropzone: planilha SKU -->
+            <div class="field">
+                <span class="label">1. Planilha SKU (entrada)</span>
+                {% include "_dropzone.html" %}
+            </div>
+
+            <!-- Dropzone: template NOGORA -->
+            <div class="field">
+                <span class="label">2. Modelo NOGORA (.xlsm)</span>
+                {% with id_suffix="template", accept=".xlsm", label="Solte o template Amazon", sublabel="ou clique para selecionar (.xlsm)" %}
+                    {% include "_dropzone.html" %}
+                {% endwith %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card__footer">
+        <button id="btn-processar" class="btn btn--primary" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Processar SKUs
+        </button>
+    </div>
+</div>
+
+<!-- ============= CONSOLE / PROGRESSO ============= -->
+<div id="processing" class="card mt-6 hide">
+    <div class="card__header">
+        <div>
+            <div class="card__title">Processando...</div>
+            <div id="processing-status" class="card__sub">Aguardando início.</div>
+        </div>
+        <span id="processing-badge" class="badge badge--info">em execução</span>
+    </div>
+    <div class="card__body">
+        <div class="progress"><div id="progress-bar" class="progress__bar"></div></div>
+        <div id="console" class="console mt-3"></div>
+    </div>
+</div>
+
+<!-- ============= RESULTADO ============= -->
+<div id="result-host" class="mt-6"></div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce() }}">
+    initProcessamento({
+        endpoint: "{{ url_for('api_processar_sku') }}",
+        camposArquivos: { arquivo_entrada: 'entrada', arquivo_template: 'template' },
+    });
+</script>
+{% endblock %}

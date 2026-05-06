@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Perfil · Topshop Amazon System{% endblock %}
+
+{% block breadcrumb %}
+<span class="topbar__crumb">Sistema</span>
+<span class="topbar__chev">/</span>
+<span class="topbar__crumb topbar__crumb--current">Perfil</span>
+{% endblock %}
+
+{% block content %}
+<div class="card card--narrow">
+    <h1 class="card__title">Meu perfil</h1>
+    <p class="card__lead">{{ current_user.email }} <span class="badge badge--{{ 'warning' if current_user.is_admin else 'info' }}">{{ current_user.papel }}</span></p>
+
+    {% if msg_ok %}<div class="alert alert--success">{{ msg_ok }}</div>{% endif %}
+    {% if erro %}<div class="alert alert--danger">{{ erro }}</div>{% endif %}
+
+    <form method="POST" action="{{ url_for('auth.perfil') }}" novalidate>
+        {{ form.hidden_tag() }}
+
+        <label class="field">
+            <span class="field__label">Nome</span>
+            {{ form.nome(class_="field__input") }}
+            {% for e in form.nome.errors %}<span class="field__error">{{ e }}</span>{% endfor %}
+        </label>
+
+        <h3 class="card__section-title">Trocar senha</h3>
+        <p class="card__hint">Preencha apenas se quiser trocar a senha.</p>
+
+        <label class="field">
+            <span class="field__label">Senha atual</span>
+            {{ form.senha_atual(class_="field__input", autocomplete="current-password") }}
+        </label>
+
+        <label class="field">
+            <span class="field__label">Nova senha</span>
+            {{ form.nova_senha(class_="field__input", autocomplete="new-password") }}
+            {% for e in form.nova_senha.errors %}<span class="field__error">{{ e }}</span>{% endfor %}
+        </label>
+
+        <label class="field">
+            <span class="field__label">Confirmar nova senha</span>
+            {{ form.confirmacao(class_="field__input", autocomplete="new-password") }}
+            {% for e in form.confirmacao.errors %}<span class="field__error">{{ e }}</span>{% endfor %}
+        </label>
+
+        <button type="submit" class="btn btn--primary btn--lg">Salvar alterações</button>
+    </form>
+</div>
+{% endblock %}

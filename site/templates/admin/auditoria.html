@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Auditoria · Topshop Amazon System{% endblock %}
+
+{% block breadcrumb %}
+<span class="topbar__crumb">Administração</span>
+<span class="topbar__chev">/</span>
+<span class="topbar__crumb topbar__crumb--current">Auditoria</span>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card__header">
+        <div>
+            <h1 class="card__title">Eventos de autenticação</h1>
+            <p class="card__lead">Últimos {{ limite }} eventos.</p>
+        </div>
+    </div>
+
+    <form method="GET" class="filter-bar">
+        <input class="field__input" name="email" value="{{ filtro_email or '' }}" placeholder="Filtrar por e-mail">
+        <select class="field__input" name="evento">
+            <option value="">— Todos os eventos —</option>
+            {% for ev in ['login_ok', 'login_falha', 'login_bloqueado', 'logout',
+                          'bloqueio', 'troca_senha', 'reset_emitido', 'reset_senha',
+                          'convite_emitido', 'convite_usado', 'convite_revogado',
+                          'promocao', 'rebaixamento', 'desativacao', 'ativacao'] %}
+            <option value="{{ ev }}" {% if filtro_evento == ev %}selected{% endif %}>{{ ev }}</option>
+            {% endfor %}
+        </select>
+        <button class="btn btn--primary">Filtrar</button>
+    </form>
+
+    <table class="table">
+        <thead>
+            <tr><th>Quando</th><th>Evento</th><th>E-mail</th><th>IP</th><th>Detalhes</th></tr>
+        </thead>
+        <tbody>
+            {% for e in eventos %}
+            <tr>
+                <td>{{ e.criado_em.strftime('%d/%m/%Y %H:%M:%S') }}</td>
+                <td><span class="badge badge--{{ 'success' if 'ok' in e.evento or 'usado' in e.evento else ('danger' if 'falha' in e.evento or 'bloq' in e.evento else 'info') }}">{{ e.evento }}</span></td>
+                <td>{{ e.email_tentado or '—' }}</td>
+                <td><code>{{ e.ip or '—' }}</code></td>
+                <td class="text-muted">{{ e.detalhes or '' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-muted text-center">Nenhum evento encontrado.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

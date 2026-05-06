@@ -1,0 +1,33 @@
+customtkinter>=5.2.2
+openpyxl
+pandas
+python-dotenv
+pyinstaller
+streamlit
+
+# Web (Flask)
+flask>=2.3
+flask-login>=0.6.3
+flask-wtf>=1.2.1
+flask-limiter>=3.5.0
+flask-talisman>=1.1.0
+flask-sqlalchemy>=3.1.1
+sqlalchemy>=2.0.25
+
+# Banco
+alembic>=1.13.1
+psycopg[binary]>=3.1.18      ; sys_platform != 'win32' or python_version >= '3.10'
+
+# Segurança
+argon2-cffi>=23.1.0
+itsdangerous>=2.1.2
+email-validator>=2.1.0
+
+# Servidor de produção
+gunicorn>=21.2.0      ; sys_platform != 'win32'
+waitress>=3.0.0       ; sys_platform == 'win32'
+
+# Testes
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-flask>=1.3.0

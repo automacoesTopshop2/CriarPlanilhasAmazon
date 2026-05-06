@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Topshop Amazon System{% endblock %}
+
+{% block breadcrumb %}
+<span class="topbar__crumb">Sistema</span>
+<span class="topbar__chev">/</span>
+<span class="topbar__crumb topbar__crumb--current">Dashboard</span>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <h1>Bem-vindo de volta</h1>
+    <p>Console de criação e manutenção de planilhas para a Amazon Seller Central.</p>
+</div>
+
+<!-- ===========================================================
+     STATUS DAS BASES
+     =========================================================== -->
+<section class="grid grid--2 mb-6">
+    <div class="stat">
+        <div class="stat__top">
+            <div>
+                <div class="stat__label">Base de Precificação</div>
+                <div class="stat__value">
+                    {% if bases.precificacao.existe %}
+                        Pronta
+                    {% else %}
+                        Ausente
+                    {% endif %}
+                </div>
+                <div class="stat__hint">
+                    {% if bases.precificacao.existe %}
+                        Atualizada em {{ bases.precificacao.atualizado_em }}
+                    {% else %}
+                        Faça upload via barra lateral.
+                    {% endif %}
+                </div>
+            </div>
+            <div class="stat__icon">
+                {% if bases.precificacao.existe %}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                {% else %}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="stat">
+        <div class="stat__top">
+            <div>
+                <div class="stat__label">Base de Descrição</div>
+                <div class="stat__value">
+                    {% if bases.descricao.existe %}Pronta{% else %}Ausente{% endif %}
+                </div>
+                <div class="stat__hint">
+                    {% if bases.descricao.existe %}
+                        Atualizada em {{ bases.descricao.atualizado_em }}
+                    {% else %}
+                        Faça upload via barra lateral.
+                    {% endif %}
+                </div>
+            </div>
+            <div class="stat__icon">
+                {% if bases.descricao.existe %}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                {% else %}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===========================================================
+     MÓDULOS
+     =========================================================== -->
+<div class="page-header">
+    <h2 class="h2-md">Escolha um módulo</h2>
+    <p>Cada módulo executa um pipeline diferente sobre os templates da Amazon.</p>
+</div>
+
+<section class="grid grid--3">
+    <a href="{{ url_for('page_sku') }}" class="module-card">
+        <div class="module-card__icon module-card__icon--sku">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        </div>
+        <h3 class="module-card__title">Criar por SKU</h3>
+        <p class="module-card__desc">
+            Pipeline completo: lê uma planilha de SKUs, busca preços e descrições nas bases e
+            preenche o template Amazon com tópicos, imagens e valores fixos.
+        </p>
+        <span class="module-card__cta">Iniciar criação</span>
+    </a>
+
+    <a href="{{ url_for('page_asin') }}" class="module-card">
+        <div class="module-card__icon module-card__icon--asin">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </div>
+        <h3 class="module-card__title">Criar por ASIN</h3>
+        <p class="module-card__desc">
+            Pipeline rápido para vincular ASINs existentes — preenche apenas preço, medidas
+            e peso, ideal para listagens já catalogadas.
+        </p>
+        <span class="module-card__cta">Iniciar vinculação</span>
+    </a>
+
+    <a href="{{ url_for('page_limpeza') }}" class="module-card">
+        <div class="module-card__icon module-card__icon--limpeza">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18l-2 13H5L3 6z"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </div>
+        <h3 class="module-card__title">Limpeza</h3>
+        <p class="module-card__desc">
+            Higieniza títulos, descrições e bullets aplicando regras de remoção e substituição
+            cadastradas. Ideal para padronizar conteúdo antes do upload.
+        </p>
+        <span class="module-card__cta">Abrir ferramenta</span>
+    </a>
+</section>
+
+{% endblock %}

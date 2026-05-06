@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Login · Topshop Amazon System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F59E0B'/><text x='50' y='66' text-anchor='middle' font-size='52' font-family='sans-serif' font-weight='800' fill='%230B1220'>T</text></svg>">
+</head>
+<body class="auth-body">
+    <div class="auth-card">
+        <div class="auth-card__brand">
+            <div class="auth-card__mark">T</div>
+            <div>
+                <div class="auth-card__name">Topshop Amazon</div>
+                <div class="auth-card__sub">System</div>
+            </div>
+        </div>
+
+        <h1 class="auth-card__title">Entrar</h1>
+        <p class="auth-card__lead">Acesse sua conta para continuar.</p>
+
+        {% if erro %}
+        <div class="alert alert--danger">{{ erro }}</div>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('auth.login') }}" novalidate>
+            {{ form.hidden_tag() }}
+            {% if request.args.get('next') %}
+            <input type="hidden" name="next" value="{{ request.args.get('next') }}">
+            {% endif %}
+
+            <label class="field">
+                <span class="field__label">E-mail</span>
+                {{ form.email(class_="field__input", autocomplete="username", autofocus=True) }}
+                {% for e in form.email.errors %}<span class="field__error">{{ e }}</span>{% endfor %}
+            </label>
+
+            <label class="field">
+                <span class="field__label">Senha</span>
+                {{ form.senha(class_="field__input", autocomplete="current-password") }}
+                {% for e in form.senha.errors %}<span class="field__error">{{ e }}</span>{% endfor %}
+            </label>
+
+            <label class="checkbox">
+                {{ form.lembrar() }}
+                <span>Manter-me conectado</span>
+            </label>
+
+            <button type="submit" class="btn btn--primary btn--lg btn--block">Entrar</button>
+        </form>
+
+        <p class="auth-card__hint">
+            Sem conta? Solicite um link de convite ao administrador.
+        </p>
+    </div>
+</body>
+</html>

@@ -1,0 +1,63 @@
+# Variáveis sensíveis
+.env
+
+# Estado local do Claude Code
+.claude/
+
+# Bases de dados / planilhas reais (dados sensíveis)
+Precificacao.xlsx
+Precificação.xlsx
+DESCRIÇÃO.xlsx
+DESCRICAO.xlsx
+CriarASIN.xlsx
+CriarSKU.xlsx
+outro.xlsx
+
+# Excel lock files
+~$*
+
+# Termos editáveis em runtime
+termos_remover.txt
+termos_substituir.txt
+
+# Script de teste manual ad-hoc
+_tests_web.py
+
+# Configuração persistida do app (pode conter caminhos sensíveis)
+app_config.json
+
+# Banco SQLite local
+site/instance/
+*.db
+*.db-journal
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtualenv
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+build/
+dist/
+*.spec

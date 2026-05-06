@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Redefinir senha · Topshop Amazon System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="auth-body">
+    <div class="auth-card">
+        <div class="auth-card__brand">
+            <div class="auth-card__mark">T</div>
+            <div>
+                <div class="auth-card__name">Topshop Amazon</div>
+                <div class="auth-card__sub">System</div>
+            </div>
+        </div>
+
+        <h1 class="auth-card__title">Definir nova senha</h1>
+        <p class="auth-card__lead">Após salvar, você precisará fazer login novamente.</p>
+
+        {% if erro %}<div class="alert alert--danger">{{ erro }}</div>{% endif %}
+
+        <form method="POST" action="{{ url_for('auth.reset', token=token) }}" novalidate>
+            {{ form.hidden_tag() }}
+
+            <label class="field">
+                <span class="field__label">Nova senha</span>
+                {{ form.nova_senha(class_="field__input", autocomplete="new-password", autofocus=True) }}
+                <span class="field__hint">Mínimo 10 caracteres, com letra e número.</span>
+            </label>
+
+            <label class="field">
+                <span class="field__label">Confirmar nova senha</span>
+                {{ form.confirmacao(class_="field__input", autocomplete="new-password") }}
+            </label>
+
+            <button type="submit" class="btn btn--primary btn--lg btn--block">Salvar nova senha</button>
+        </form>
+    </div>
+</body>
+</html>
