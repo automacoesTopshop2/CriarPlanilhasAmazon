@@ -50,6 +50,10 @@ class GerenciadorConfig:
         ],
         "valores_fixos_customizados": {},
         "valores_fixos_excluidos": [],
+        # SharePoint (path do site e arquivo; credenciais ficam em env vars)
+        "sharepoint_site_url": "",
+        "sharepoint_arquivo_precificacao": "",
+        "sharepoint_sync_no_startup": True,
         # Mapas editáveis via UI admin (vazio = usa default de config.py)
         "mapa_colunas_descricao": {},      # { "sku": ["SKU", ...], "titulo": [...], ... }
         "mapa_colunas_excluidos": [],      # chaves inteiras removidas via painel

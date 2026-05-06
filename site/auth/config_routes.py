@@ -25,10 +25,10 @@ API:
 from __future__ import annotations
 
 from flask import Blueprint, abort, current_app, jsonify, render_template, request
-from flask_login import login_required
+from flask_login import current_user, login_required
 from flask_wtf.csrf import validate_csrf
 
-from .security import requer_admin
+from .security import registrar_evento, requer_admin
 
 
 config_bp = Blueprint("config_admin", __name__)
@@ -68,6 +68,22 @@ def _reaplica_config():
         cfg.aplicar_gerenciador(_gerenciador())
 
 
+def _sharepoint_status() -> dict:
+    """Estado das credenciais e config SharePoint, sem expor secrets."""
+    import os as _os
+    g = _gerenciador()
+    return {
+        "site_url": g.get("sharepoint_site_url") or "",
+        "arquivo_precificacao": g.get("sharepoint_arquivo_precificacao") or "",
+        "sync_no_startup": bool(g.get("sharepoint_sync_no_startup", True)),
+        "credenciais_configuradas": all([
+            (_os.getenv("SHAREPOINT_TENANT_ID") or "").strip(),
+            (_os.getenv("SHAREPOINT_CLIENT_ID") or "").strip(),
+            (_os.getenv("SHAREPOINT_CLIENT_SECRET") or "").strip(),
+        ]),
+    }
+
+
 def _snapshot():
     """Estado atual completo para popular a UI."""
     g = _gerenciador()
@@ -103,6 +119,7 @@ def _snapshot():
         "mapa_precificacao_customizados": g.mapa_colunas_precificacao(),
         "mapa_prefixo": mapa_prefixo_efetivo,
         "mapa_prefixo_customizados": g.mapa_prefixo_conta(),
+        "sharepoint": _sharepoint_status(),
     }
 
 
@@ -343,3 +360,99 @@ def api_prefixo_del(prefixo: str):
     g.remover_prefixo(prefixo)
     _reaplica_config()
     return jsonify({"sucesso": True, "estado": _snapshot()})
+
+
+# =============================================================================
+# SharePoint
+# =============================================================================
+def _sharepoint_client_ou_erro():
+    """Retorna (cliente, None) ou (None, mensagem-de-erro)."""
+    try:
+        from core.sharepoint_client import SharePointClient
+    except ImportError as e:
+        return None, f"msal não instalado: {e}"
+    cliente = SharePointClient.do_ambiente()
+    if cliente is None:
+        return None, (
+            "Credenciais ausentes. Defina SHAREPOINT_TENANT_ID, "
+            "SHAREPOINT_CLIENT_ID e SHAREPOINT_CLIENT_SECRET no .env."
+        )
+    return cliente, None
+
+
+@config_bp.route("/api/config/sharepoint", methods=["PUT"])
+@login_required
+@requer_admin
+def api_sharepoint_config():
+    """Salva site_url, arquivo_path e sync_no_startup. Sem credenciais."""
+    _csrf()
+    data = request.get_json(silent=True) or {}
+    g = _gerenciador()
+    if "site_url" in data:
+        g.set("sharepoint_site_url", str(data["site_url"]).strip())
+    if "arquivo_precificacao" in data:
+        g.set("sharepoint_arquivo_precificacao", str(data["arquivo_precificacao"]).strip())
+    if "sync_no_startup" in data:
+        g.set("sharepoint_sync_no_startup", bool(data["sync_no_startup"]))
+    return jsonify({"sucesso": True, "estado": _snapshot()})
+
+
+@config_bp.route("/api/config/sharepoint/testar", methods=["POST"])
+@login_required
+@requer_admin
+def api_sharepoint_testar():
+    """Valida credenciais + acesso ao site. Não baixa arquivo."""
+    _csrf()
+    g = _gerenciador()
+    site_url = (g.get("sharepoint_site_url") or "").strip()
+    if not site_url:
+        return jsonify({"sucesso": False, "mensagem": "Configure o site_url primeiro."}), 400
+
+    cliente, erro = _sharepoint_client_ou_erro()
+    if erro:
+        return jsonify({"sucesso": False, "mensagem": erro}), 400
+
+    try:
+        info = cliente.testar_conexao(site_url)
+        return jsonify({"sucesso": True, **info})
+    except Exception as e:
+        return jsonify({"sucesso": False, "mensagem": str(e)}), 400
+
+
+@config_bp.route("/api/config/sharepoint/sincronizar", methods=["POST"])
+@login_required
+@requer_admin
+def api_sharepoint_sincronizar():
+    """Baixa a Precificação do SharePoint e grava no path local."""
+    _csrf()
+    g = _gerenciador()
+    cfg = _config_app()
+    site_url = (g.get("sharepoint_site_url") or "").strip()
+    arquivo_path = (g.get("sharepoint_arquivo_precificacao") or "").strip()
+    if not (site_url and arquivo_path):
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "Configure site_url e arquivo_precificacao primeiro.",
+        }), 400
+
+    cliente, erro = _sharepoint_client_ou_erro()
+    if erro:
+        return jsonify({"sucesso": False, "mensagem": erro}), 400
+
+    from core.sharepoint_client import sincronizar_arquivo
+    destino = cfg.arquivo_precificacao if cfg else g.get("arquivo_precificacao")
+    ok, msg = sincronizar_arquivo(cliente, site_url, arquivo_path, destino)
+    if ok:
+        registrar_evento(
+            "sharepoint_sync_ok",
+            usuario_id=current_user.id,
+            detalhes=msg[:255],
+        )
+        return jsonify({"sucesso": True, "mensagem": msg})
+    else:
+        registrar_evento(
+            "sharepoint_sync_falhou",
+            usuario_id=current_user.id,
+            detalhes=msg[:255],
+        )
+        return jsonify({"sucesso": False, "mensagem": msg}), 400

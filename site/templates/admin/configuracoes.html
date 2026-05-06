@@ -19,6 +19,7 @@
         <button class="tab" data-tab="precificacao">Mapeamento Precificação</button>
         <button class="tab" data-tab="prefixos">Prefixos de Conta</button>
         <button class="tab" data-tab="onedrive">OneDrive</button>
+        <button class="tab" data-tab="sharepoint">SharePoint</button>
     </div>
 
     <!-- Tab: arquivos ------------------------------------------------ -->
@@ -212,6 +213,53 @@
         </div>
         <button class="btn btn--ghost" id="btn-add-onedrive">+ Adicionar caminho</button>
         <button class="btn btn--primary" id="btn-salvar-onedrive">Salvar lista</button>
+    </section>
+
+    <!-- Tab: sharepoint ---------------------------------------------- -->
+    <section class="tab-panel" data-panel="sharepoint">
+        <h2 class="card__section-title">SharePoint — Sincronização da Precificação</h2>
+        <p class="card__hint">
+            Baixa o arquivo de Precificação do SharePoint via Microsoft Graph (Client Credentials).
+            As credenciais (tenant_id, client_id, client_secret) ficam em variáveis de ambiente
+            (<code>.env</code>) — apenas o caminho do site e do arquivo são editáveis aqui.
+        </p>
+
+        <div class="alert {% if snapshot.sharepoint.credenciais_configuradas %}alert--success{% else %}alert--danger{% endif %}">
+            {% if snapshot.sharepoint.credenciais_configuradas %}
+                ✓ Credenciais detectadas no ambiente.
+            {% else %}
+                ⚠ Credenciais ausentes. Defina <code>SHAREPOINT_TENANT_ID</code>,
+                <code>SHAREPOINT_CLIENT_ID</code> e <code>SHAREPOINT_CLIENT_SECRET</code>
+                no arquivo <code>.env</code> e reinicie o servidor.
+            {% endif %}
+        </div>
+
+        <form id="form-sharepoint" class="form-grid">
+            <label class="field field--full">
+                <span class="field__label">URL do site</span>
+                <input class="field__input" name="site_url"
+                       placeholder="https://contoso.sharepoint.com/sites/MeuTime"
+                       value="{{ snapshot.sharepoint.site_url }}">
+            </label>
+            <label class="field field--full">
+                <span class="field__label">Caminho do arquivo de Precificação</span>
+                <input class="field__input" name="arquivo_precificacao"
+                       placeholder="Documentos Compartilhados/Precificacao Amazon.xlsx"
+                       value="{{ snapshot.sharepoint.arquivo_precificacao }}">
+            </label>
+            <label class="checkbox">
+                <input type="checkbox" name="sync_no_startup"
+                       {% if snapshot.sharepoint.sync_no_startup %}checked{% endif %}>
+                <span>Sincronizar automaticamente no startup do servidor</span>
+            </label>
+            <div class="form-grid__actions">
+                <button type="submit" class="btn btn--primary">Salvar</button>
+                <button type="button" class="btn btn--ghost" id="btn-sp-testar">Testar conexão</button>
+                <button type="button" class="btn btn--primary" id="btn-sp-sincronizar">Sincronizar agora</button>
+            </div>
+        </form>
+
+        <div id="sharepoint-resultado" class="alert hide"></div>
     </section>
 </div>
 

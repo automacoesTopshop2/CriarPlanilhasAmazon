@@ -86,6 +86,46 @@ def _limpar_jobs_antigos(horas: int = 2) -> None:
 
 
 # ==============================================================================
+# Helpers de inicialização
+# ==============================================================================
+def _sincronizar_sharepoint_startup(app: Flask, gerenciador, cfg) -> None:
+    """
+    Tenta baixar a Precificação do SharePoint no startup.
+    Erros são logados mas não interrompem o servidor — sistema segue com
+    arquivo local antigo (se existir).
+    """
+    site_url = (gerenciador.get("sharepoint_site_url") or "").strip()
+    arquivo_path = (gerenciador.get("sharepoint_arquivo_precificacao") or "").strip()
+    if not (site_url and arquivo_path):
+        # Não configurado: silencioso. UI mostra status quando admin abrir o painel.
+        return
+
+    try:
+        from core.sharepoint_client import SharePointClient, sincronizar_arquivo
+    except ImportError as e:
+        app.logger.warning("SharePoint indisponível (msal não instalado?): %s", e)
+        return
+
+    cliente = SharePointClient.do_ambiente()
+    if cliente is None:
+        app.logger.info(
+            "SharePoint configurado no painel mas credenciais ausentes em env "
+            "(SHAREPOINT_TENANT_ID/CLIENT_ID/CLIENT_SECRET) — pulando sync."
+        )
+        return
+
+    destino = cfg.arquivo_precificacao
+    ok, msg = sincronizar_arquivo(cliente, site_url, arquivo_path, destino)
+    if ok:
+        app.logger.info("SharePoint sync OK: %s", msg)
+    else:
+        app.logger.error(
+            "SharePoint sync falhou no startup (continuando com arquivo local): %s",
+            msg,
+        )
+
+
+# ==============================================================================
 # FACTORY
 # ==============================================================================
 def create_app(config_overrides: Optional[Dict[str, Any]] = None) -> Flask:
@@ -223,6 +263,12 @@ def create_app(config_overrides: Optional[Dict[str, Any]] = None) -> Flask:
     cfg = Configuracoes().aplicar_gerenciador(gerenciador)
     app.config["CONFIG_MANAGER"] = gerenciador
     app.config["APP_CONFIG"] = cfg
+
+    # ---- Sincronização SharePoint no startup (não-bloqueante em caso de erro) ----
+    # Se as credenciais e os caminhos estiverem configurados, baixa a Precificação
+    # antes de aceitar requests. Falha → log + segue com arquivo local antigo.
+    if not app.config.get("TESTING") and gerenciador.get("sharepoint_sync_no_startup", True):
+        _sincronizar_sharepoint_startup(app, gerenciador, cfg)
 
     # ---- Blueprints ----
     app.register_blueprint(auth_bp)

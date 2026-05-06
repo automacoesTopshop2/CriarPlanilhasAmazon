@@ -272,4 +272,48 @@
         if (r.ok) toast('OneDrive salvo.', true);
         else toast(r.data.mensagem || 'Falha.', false);
     });
+
+    // === SharePoint ===
+    function spResultado(msg, ok) {
+        const box = document.getElementById('sharepoint-resultado');
+        if (!box) return;
+        box.classList.remove('hide', 'alert--success', 'alert--danger');
+        box.classList.add(ok ? 'alert--success' : 'alert--danger');
+        box.textContent = msg;
+    }
+
+    document.getElementById('form-sharepoint')?.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(ev.target);
+        const body = {
+            site_url: fd.get('site_url') || '',
+            arquivo_precificacao: fd.get('arquivo_precificacao') || '',
+            sync_no_startup: fd.get('sync_no_startup') === 'on',
+        };
+        const r = await api('/api/config/sharepoint', { method: 'PUT', body });
+        if (r.ok) toast('Configuração SharePoint salva.', true);
+        else toast(r.data.mensagem || 'Falha ao salvar.', false);
+    });
+
+    document.getElementById('btn-sp-testar')?.addEventListener('click', async () => {
+        spResultado('Testando...', true);
+        const r = await api('/api/config/sharepoint/testar', { method: 'POST' });
+        if (r.ok && r.data.ok) {
+            spResultado(`✓ Conexão OK — site: "${r.data.site_name}" (${r.data.web_url})`, true);
+        } else {
+            spResultado('✗ ' + (r.data.mensagem || 'Falha desconhecida.'), false);
+        }
+    });
+
+    document.getElementById('btn-sp-sincronizar')?.addEventListener('click', async () => {
+        spResultado('Sincronizando...', true);
+        const r = await api('/api/config/sharepoint/sincronizar', { method: 'POST' });
+        if (r.ok && r.data.sucesso) {
+            spResultado('✓ ' + r.data.mensagem, true);
+            toast('Precificação sincronizada do SharePoint.', true);
+        } else {
+            spResultado('✗ ' + (r.data.mensagem || 'Falha desconhecida.'), false);
+            toast('Falha ao sincronizar.', false);
+        }
+    });
 })();

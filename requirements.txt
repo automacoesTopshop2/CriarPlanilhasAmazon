@@ -23,6 +23,10 @@ argon2-cffi>=23.1.0
 itsdangerous>=2.1.2
 email-validator>=2.1.0
 
+# SharePoint / Microsoft Graph
+msal>=1.36.0
+requests>=2.31.0
+
 # Servidor de produção
 gunicorn>=21.2.0      ; sys_platform != 'win32'
 waitress>=3.0.0       ; sys_platform == 'win32'
