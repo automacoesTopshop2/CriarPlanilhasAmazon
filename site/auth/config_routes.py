@@ -69,12 +69,11 @@ def _reaplica_config():
 
 
 def _sharepoint_status() -> dict:
-    """Estado das credenciais e config SharePoint, sem expor secrets."""
+    """Estado da config SharePoint (link + flag), sem expor secrets."""
     import os as _os
     g = _gerenciador()
     return {
-        "site_url": g.get("sharepoint_site_url") or "",
-        "arquivo_precificacao": g.get("sharepoint_arquivo_precificacao") or "",
+        "link_precificacao": g.get("sharepoint_link_precificacao") or "",
         "sync_no_startup": bool(g.get("sharepoint_sync_no_startup", True)),
         "credenciais_configuradas": all([
             (_os.getenv("SHAREPOINT_TENANT_ID") or "").strip(),
@@ -384,14 +383,12 @@ def _sharepoint_client_ou_erro():
 @login_required
 @requer_admin
 def api_sharepoint_config():
-    """Salva site_url, arquivo_path e sync_no_startup. Sem credenciais."""
+    """Salva o link de compartilhamento e a flag de sync no startup."""
     _csrf()
     data = request.get_json(silent=True) or {}
     g = _gerenciador()
-    if "site_url" in data:
-        g.set("sharepoint_site_url", str(data["site_url"]).strip())
-    if "arquivo_precificacao" in data:
-        g.set("sharepoint_arquivo_precificacao", str(data["arquivo_precificacao"]).strip())
+    if "link_precificacao" in data:
+        g.set("sharepoint_link_precificacao", str(data["link_precificacao"]).strip())
     if "sync_no_startup" in data:
         g.set("sharepoint_sync_no_startup", bool(data["sync_no_startup"]))
     return jsonify({"sucesso": True, "estado": _snapshot()})
@@ -401,19 +398,19 @@ def api_sharepoint_config():
 @login_required
 @requer_admin
 def api_sharepoint_testar():
-    """Valida credenciais + acesso ao site. Não baixa arquivo."""
+    """Valida o link sem baixar (faz GET no DriveItem para checar acesso)."""
     _csrf()
     g = _gerenciador()
-    site_url = (g.get("sharepoint_site_url") or "").strip()
-    if not site_url:
-        return jsonify({"sucesso": False, "mensagem": "Configure o site_url primeiro."}), 400
+    link = (g.get("sharepoint_link_precificacao") or "").strip()
+    if not link:
+        return jsonify({"sucesso": False, "mensagem": "Cole o link da planilha primeiro."}), 400
 
     cliente, erro = _sharepoint_client_ou_erro()
     if erro:
         return jsonify({"sucesso": False, "mensagem": erro}), 400
 
     try:
-        info = cliente.testar_conexao(site_url)
+        info = cliente.testar_url(link)
         return jsonify({"sucesso": True, **info})
     except Exception as e:
         return jsonify({"sucesso": False, "mensagem": str(e)}), 400
@@ -423,25 +420,24 @@ def api_sharepoint_testar():
 @login_required
 @requer_admin
 def api_sharepoint_sincronizar():
-    """Baixa a Precificação do SharePoint e grava no path local."""
+    """Baixa a Precificação via share-link e grava no path local."""
     _csrf()
     g = _gerenciador()
     cfg = _config_app()
-    site_url = (g.get("sharepoint_site_url") or "").strip()
-    arquivo_path = (g.get("sharepoint_arquivo_precificacao") or "").strip()
-    if not (site_url and arquivo_path):
+    link = (g.get("sharepoint_link_precificacao") or "").strip()
+    if not link:
         return jsonify({
             "sucesso": False,
-            "mensagem": "Configure site_url e arquivo_precificacao primeiro.",
+            "mensagem": "Cole o link da planilha primeiro.",
         }), 400
 
     cliente, erro = _sharepoint_client_ou_erro()
     if erro:
         return jsonify({"sucesso": False, "mensagem": erro}), 400
 
-    from core.sharepoint_client import sincronizar_arquivo
+    from core.sharepoint_client import sincronizar_por_url
     destino = cfg.arquivo_precificacao if cfg else g.get("arquivo_precificacao")
-    ok, msg = sincronizar_arquivo(cliente, site_url, arquivo_path, destino)
+    ok, msg = sincronizar_por_url(cliente, link, destino)
     if ok:
         registrar_evento(
             "sharepoint_sync_ok",

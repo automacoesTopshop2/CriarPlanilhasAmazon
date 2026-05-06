@@ -286,8 +286,7 @@
         ev.preventDefault();
         const fd = new FormData(ev.target);
         const body = {
-            site_url: fd.get('site_url') || '',
-            arquivo_precificacao: fd.get('arquivo_precificacao') || '',
+            link_precificacao: fd.get('link_precificacao') || '',
             sync_no_startup: fd.get('sync_no_startup') === 'on',
         };
         const r = await api('/api/config/sharepoint', { method: 'PUT', body });
@@ -299,7 +298,8 @@
         spResultado('Testando...', true);
         const r = await api('/api/config/sharepoint/testar', { method: 'POST' });
         if (r.ok && r.data.ok) {
-            spResultado(`✓ Conexão OK — site: "${r.data.site_name}" (${r.data.web_url})`, true);
+            const sizeKb = r.data.size ? Math.round(r.data.size / 1024) : '?';
+            spResultado(`✓ Acesso OK — "${r.data.name}" (${sizeKb} KB)`, true);
         } else {
             spResultado('✗ ' + (r.data.mensagem || 'Falha desconhecida.'), false);
         }

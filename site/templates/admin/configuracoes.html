@@ -219,9 +219,10 @@
     <section class="tab-panel" data-panel="sharepoint">
         <h2 class="card__section-title">SharePoint — Sincronização da Precificação</h2>
         <p class="card__hint">
-            Baixa o arquivo de Precificação do SharePoint via Microsoft Graph (Client Credentials).
-            As credenciais (tenant_id, client_id, client_secret) ficam em variáveis de ambiente
-            (<code>.env</code>) — apenas o caminho do site e do arquivo são editáveis aqui.
+            Cole o link de compartilhamento da planilha (botão <em>Compartilhar → Copiar link</em>
+            no SharePoint/Excel Online). O sistema usa o endpoint <code>/shares</code> do
+            Microsoft Graph e resolve site e caminho automaticamente.
+            As credenciais (tenant_id, client_id, client_secret) ficam em <code>.env</code>.
         </p>
 
         <div class="alert {% if snapshot.sharepoint.credenciais_configuradas %}alert--success{% else %}alert--danger{% endif %}">
@@ -236,16 +237,10 @@
 
         <form id="form-sharepoint" class="form-grid">
             <label class="field field--full">
-                <span class="field__label">URL do site</span>
-                <input class="field__input" name="site_url"
-                       placeholder="https://contoso.sharepoint.com/sites/MeuTime"
-                       value="{{ snapshot.sharepoint.site_url }}">
-            </label>
-            <label class="field field--full">
-                <span class="field__label">Caminho do arquivo de Precificação</span>
-                <input class="field__input" name="arquivo_precificacao"
-                       placeholder="Documentos Compartilhados/Precificacao Amazon.xlsx"
-                       value="{{ snapshot.sharepoint.arquivo_precificacao }}">
+                <span class="field__label">Link da planilha de Precificação</span>
+                <input class="field__input" name="link_precificacao"
+                       placeholder="https://...sharepoint.com/:x:/r/sites/.../Precificacao Amazon.xlsx?d=..."
+                       value="{{ snapshot.sharepoint.link_precificacao }}">
             </label>
             <label class="checkbox">
                 <input type="checkbox" name="sync_no_startup"

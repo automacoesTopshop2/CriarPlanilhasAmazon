@@ -45,9 +45,26 @@ def _push_request_context():
     yield
 
 
+# Isola o GerenciadorConfig em arquivo tmp por teste, evitando que PUTs
+# nas rotas de configuração contaminem o app_config.json real do projeto.
+@pytest.fixture(autouse=True)
+def _isolar_app_config(monkeypatch, tmp_path):
+    tmp_cfg = str(tmp_path / "app_config.json")
+    monkeypatch.setattr(
+        "core.config_manager.GerenciadorConfig._descobrir_caminho",
+        lambda self: tmp_cfg,
+    )
+    yield
+
+
 @pytest.fixture
-def app():
+def app(_isolar_app_config):
     """Cria app com DB in-memory e Limiter desligado para testes.
+
+    Depende explicitamente de `_isolar_app_config` para garantir que o patch
+    de `_descobrir_caminho` esteja aplicado ANTES do GerenciadorConfig ser
+    instanciado em `create_app`. Sem essa dep, fixtures autouse function-scope
+    podem rodar DEPOIS de fixtures não-autouse e o JSON real é contaminado.
 
     Não mantém app_context push durante o teste — cada `with app.app_context()`
     de teste/fixture cria/encerra seu próprio escopo. Caso contrário, Flask
@@ -132,7 +149,7 @@ def login_usuario(client, app, usuario):
 
 
 @pytest.fixture
-def app_with_csrf():
+def app_with_csrf(_isolar_app_config):
     """App com CSRF habilitado, para testes específicos de CSRF."""
     overrides = {
         "TESTING": True,
@@ -155,7 +172,7 @@ def client_with_csrf(app_with_csrf):
 
 
 @pytest.fixture
-def app_with_ratelimit():
+def app_with_ratelimit(_isolar_app_config):
     """App com rate limit ativo, para testes específicos."""
     overrides = {
         "TESTING": True,

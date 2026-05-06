@@ -90,18 +90,16 @@ def _limpar_jobs_antigos(horas: int = 2) -> None:
 # ==============================================================================
 def _sincronizar_sharepoint_startup(app: Flask, gerenciador, cfg) -> None:
     """
-    Tenta baixar a Precificação do SharePoint no startup.
+    Tenta baixar a Precificação do SharePoint no startup via share-link.
     Erros são logados mas não interrompem o servidor — sistema segue com
     arquivo local antigo (se existir).
     """
-    site_url = (gerenciador.get("sharepoint_site_url") or "").strip()
-    arquivo_path = (gerenciador.get("sharepoint_arquivo_precificacao") or "").strip()
-    if not (site_url and arquivo_path):
-        # Não configurado: silencioso. UI mostra status quando admin abrir o painel.
-        return
+    link = (gerenciador.get("sharepoint_link_precificacao") or "").strip()
+    if not link:
+        return  # não configurado — silencioso
 
     try:
-        from core.sharepoint_client import SharePointClient, sincronizar_arquivo
+        from core.sharepoint_client import SharePointClient, sincronizar_por_url
     except ImportError as e:
         app.logger.warning("SharePoint indisponível (msal não instalado?): %s", e)
         return
@@ -109,13 +107,13 @@ def _sincronizar_sharepoint_startup(app: Flask, gerenciador, cfg) -> None:
     cliente = SharePointClient.do_ambiente()
     if cliente is None:
         app.logger.info(
-            "SharePoint configurado no painel mas credenciais ausentes em env "
+            "SharePoint link configurado mas credenciais ausentes em env "
             "(SHAREPOINT_TENANT_ID/CLIENT_ID/CLIENT_SECRET) — pulando sync."
         )
         return
 
     destino = cfg.arquivo_precificacao
-    ok, msg = sincronizar_arquivo(cliente, site_url, arquivo_path, destino)
+    ok, msg = sincronizar_por_url(cliente, link, destino)
     if ok:
         app.logger.info("SharePoint sync OK: %s", msg)
     else:

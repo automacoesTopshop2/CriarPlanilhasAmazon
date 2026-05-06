@@ -1,49 +1,35 @@
 """
-Testes da integração SharePoint.
+Testes da integração SharePoint via share-link (endpoint /shares do Graph).
 
-Não fazem chamadas reais ao Graph — usam mocks.
-
-UUID válido para mocks: '00000000-0000-0000-0000-000000000001' (MSAL aceita
-formato GUID e nomes de domínio; rejeita strings arbitrárias).
+Não fazem chamadas reais ao Graph — usam mocks em msal e requests.
 """
 
 from __future__ import annotations
 
 import os
-import tempfile
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-from core.sharepoint_client import SharePointClient, SharePointError, sincronizar_arquivo
+from core.sharepoint_client import (
+    SharePointClient,
+    SharePointError,
+    sincronizar_por_url,
+)
 
-# Tenant ID em formato UUID — MSAL valida o formato no constructor
 TENANT_FAKE = "00000000-0000-0000-0000-000000000001"
 CLIENT_FAKE = "00000000-0000-0000-0000-000000000002"
 SECRET_FAKE = "fake-secret-value"
 
-
-@pytest.fixture(autouse=True)
-def _isolar_app_config(monkeypatch, tmp_path):
-    """
-    Aponta o GerenciadorConfig para um JSON temporário por teste, evitando
-    contaminação entre testes e do app_config.json real do projeto.
-    """
-    tmp_cfg = str(tmp_path / "app_config.json")
-    monkeypatch.setattr(
-        "core.config_manager.GerenciadorConfig._descobrir_caminho",
-        lambda self: tmp_cfg,
-    )
-    yield
+LINK_FAKE = (
+    "https://contoso.sharepoint.com/:x:/r/sites/Foo/Documentos/Preci.xlsx"
+    "?d=w1234567890abcdef&csf=1&web=1"
+)
 
 
 @pytest.fixture(autouse=True)
 def _mock_msal(monkeypatch):
-    """
-    Mocka ConfidentialClientApplication para evitar validação online de
-    authority em tenants fake. Os testes que precisam testar o token
-    fazem patch específico em acquire_token_for_client.
-    """
+    """Mocka MSAL para evitar validação online de authority em tenants fake."""
     fake_app = MagicMock()
     fake_app.acquire_token_silent.return_value = None
     fake_app.acquire_token_for_client.return_value = {"access_token": "fake-token"}
@@ -55,30 +41,27 @@ def _mock_msal(monkeypatch):
 
 
 # =============================================================================
-# Cliente — parsing & construção
+# Encoding de share-link
 # =============================================================================
-class TestParseSiteUrl:
-    def test_parse_padrao(self):
-        host, path = SharePointClient._parse_site_url(
-            "https://contoso.sharepoint.com/sites/MyTeam"
-        )
-        assert host == "contoso.sharepoint.com"
-        assert path == "/sites/MyTeam"
+class TestEncodeShareUrl:
+    def test_formato_u_bang(self):
+        share_id = SharePointClient._encode_share_url(LINK_FAKE)
+        assert share_id.startswith("u!")
+        # base64url sem padding final
+        assert "=" not in share_id
 
-    def test_parse_root(self):
-        host, path = SharePointClient._parse_site_url("https://contoso.sharepoint.com")
-        assert host == "contoso.sharepoint.com"
-        assert path == "/"
+    def test_decodifica_de_volta(self):
+        import base64
+        share_id = SharePointClient._encode_share_url(LINK_FAKE)
+        encoded = share_id[2:]  # tira "u!"
+        # base64url decode (com padding restaurado)
+        padding = "=" * ((4 - len(encoded) % 4) % 4)
+        decoded = base64.urlsafe_b64decode(encoded + padding).decode("utf-8")
+        assert decoded == LINK_FAKE
 
-    def test_parse_remove_barra_final(self):
-        host, path = SharePointClient._parse_site_url(
-            "https://contoso.sharepoint.com/sites/Foo/"
-        )
-        assert path == "/sites/Foo"
-
-    def test_parse_url_invalido(self):
+    def test_link_vazio_levanta_erro(self):
         with pytest.raises(SharePointError):
-            SharePointClient._parse_site_url("")
+            SharePointClient._encode_share_url("")
 
 
 class TestDoAmbiente:
@@ -92,97 +75,86 @@ class TestDoAmbiente:
         monkeypatch.setenv("SHAREPOINT_TENANT_ID", TENANT_FAKE)
         monkeypatch.setenv("SHAREPOINT_CLIENT_ID", CLIENT_FAKE)
         monkeypatch.setenv("SHAREPOINT_CLIENT_SECRET", SECRET_FAKE)
-        c = SharePointClient.do_ambiente()
-        assert c is not None
+        assert SharePointClient.do_ambiente() is not None
 
 
 # =============================================================================
-# Cliente — download (mockado)
+# Cliente — testar_url e baixar_por_url
 # =============================================================================
-class TestBaixarArquivoMock:
-    def _make_client(self):
+class TestTestarUrl:
+    @patch("core.sharepoint_client.requests.get")
+    def test_retorna_metadados(self, mock_get):
+        mock_resp = MagicMock(status_code=200, ok=True)
+        mock_resp.json.return_value = {
+            "name": "Preci.xlsx",
+            "size": 12345,
+            "webUrl": "https://contoso.sharepoint.com/foo",
+            "lastModifiedDateTime": "2025-01-01T00:00:00Z",
+        }
+        mock_get.return_value = mock_resp
+
         c = SharePointClient(TENANT_FAKE, CLIENT_FAKE, SECRET_FAKE)
-        return c
+        info = c.testar_url(LINK_FAKE)
+        assert info["ok"] is True
+        assert info["name"] == "Preci.xlsx"
+        assert info["size"] == 12345
 
     @patch("core.sharepoint_client.requests.get")
-    def test_baixa_arquivo_com_sucesso(self, mock_get):
-        mock_site = MagicMock(status_code=200)
-        mock_site.json.return_value = {"id": "site-id-abc", "displayName": "Foo"}
-        mock_download = MagicMock(status_code=200, content=b"FAKE_XLSX_BYTES")
-        mock_get.side_effect = [mock_site, mock_download]
+    def test_404(self, mock_get):
+        mock_get.return_value = MagicMock(status_code=404, ok=False)
+        c = SharePointClient(TENANT_FAKE, CLIENT_FAKE, SECRET_FAKE)
+        with pytest.raises(SharePointError, match="404|inválido"):
+            c.testar_url(LINK_FAKE)
 
-        c = self._make_client()
-        conteudo = c.baixar_arquivo(
-            "https://contoso.sharepoint.com/sites/Foo",
-            "Documentos/Precificacao.xlsx",
+    @patch("core.sharepoint_client.requests.get")
+    def test_403_indica_sites_selected(self, mock_get):
+        mock_get.return_value = MagicMock(status_code=403, ok=False)
+        c = SharePointClient(TENANT_FAKE, CLIENT_FAKE, SECRET_FAKE)
+        with pytest.raises(SharePointError, match="Sites.Selected|permiss"):
+            c.testar_url(LINK_FAKE)
+
+
+class TestBaixarPorUrl:
+    @patch("core.sharepoint_client.requests.get")
+    def test_baixa_conteudo(self, mock_get):
+        mock_get.return_value = MagicMock(
+            status_code=200, ok=True, content=b"FAKE_XLSX_BYTES"
         )
+        c = SharePointClient(TENANT_FAKE, CLIENT_FAKE, SECRET_FAKE)
+        conteudo = c.baixar_por_url(LINK_FAKE)
         assert conteudo == b"FAKE_XLSX_BYTES"
 
     @patch("core.sharepoint_client.requests.get")
-    def test_arquivo_404(self, mock_get):
-        mock_site = MagicMock(status_code=200)
-        mock_site.json.return_value = {"id": "site-id"}
-        mock_download = MagicMock(status_code=404)
-        mock_get.side_effect = [mock_site, mock_download]
-
-        c = self._make_client()
-        with pytest.raises(SharePointError, match="não encontrado"):
-            c.baixar_arquivo("https://x.sharepoint.com/sites/Y", "missing.xlsx")
-
-    @patch("core.sharepoint_client.requests.get")
-    def test_site_403_indica_permissao(self, mock_get):
-        mock_site = MagicMock(status_code=403)
-        mock_get.return_value = mock_site
-
-        c = self._make_client()
-        with pytest.raises(SharePointError, match="Sites.Selected|permiss"):
-            c.baixar_arquivo("https://x.sharepoint.com/sites/Y", "file.xlsx")
-
-    @patch("core.sharepoint_client.requests.get")
-    def test_site_id_cacheado(self, mock_get):
-        """Segunda chamada não faz lookup de site — usa cache."""
-        mock_site = MagicMock(status_code=200)
-        mock_site.json.return_value = {"id": "site-id-cache"}
-        mock_dl1 = MagicMock(status_code=200, content=b"A")
-        mock_dl2 = MagicMock(status_code=200, content=b"B")
-        mock_get.side_effect = [mock_site, mock_dl1, mock_dl2]
-
-        c = self._make_client()
-        c.baixar_arquivo("https://x.sharepoint.com/sites/Y", "a.xlsx")
-        c.baixar_arquivo("https://x.sharepoint.com/sites/Y", "b.xlsx")
-        # 1 site lookup + 2 downloads = 3 calls
-        assert mock_get.call_count == 3
+    def test_chama_endpoint_shares(self, mock_get):
+        mock_get.return_value = MagicMock(status_code=200, ok=True, content=b"X")
+        c = SharePointClient(TENANT_FAKE, CLIENT_FAKE, SECRET_FAKE)
+        c.baixar_por_url(LINK_FAKE)
+        called_url = mock_get.call_args[0][0]
+        assert "/shares/u!" in called_url
+        assert called_url.endswith("/driveItem/content")
 
 
-class TestSincronizarArquivo:
+class TestSincronizarPorUrl:
     @patch("core.sharepoint_client.requests.get")
     def test_grava_arquivo_local(self, mock_get, tmp_path):
-        mock_site = MagicMock(status_code=200)
-        mock_site.json.return_value = {"id": "site-id"}
-        mock_download = MagicMock(status_code=200, content=b"DADOS")
-        mock_get.side_effect = [mock_site, mock_download]
-
+        mock_get.return_value = MagicMock(
+            status_code=200, ok=True, content=b"DADOS"
+        )
         c = SharePointClient(TENANT_FAKE, CLIENT_FAKE, SECRET_FAKE)
         destino = str(tmp_path / "saida.xlsx")
-        ok, msg = sincronizar_arquivo(
-            c, "https://x.sharepoint.com/sites/Y", "file.xlsx", destino
-        )
+        ok, msg = sincronizar_por_url(c, LINK_FAKE, destino)
         assert ok, msg
         assert os.path.exists(destino)
         with open(destino, "rb") as f:
             assert f.read() == b"DADOS"
 
     @patch("core.sharepoint_client.requests.get")
-    def test_retorna_false_em_erro(self, mock_get, tmp_path):
-        mock_get.return_value = MagicMock(status_code=500)
+    def test_retorna_false_em_404(self, mock_get, tmp_path):
+        mock_get.return_value = MagicMock(status_code=404, ok=False)
         c = SharePointClient(TENANT_FAKE, CLIENT_FAKE, SECRET_FAKE)
-        ok, msg = sincronizar_arquivo(
-            c, "https://x.sharepoint.com/sites/Y", "file.xlsx",
-            str(tmp_path / "out.xlsx"),
-        )
-        # 500 levanta HTTPError em raise_for_status → captured como erro genérico
+        ok, msg = sincronizar_por_url(c, LINK_FAKE, str(tmp_path / "out.xlsx"))
         assert ok is False
-        assert isinstance(msg, str) and msg
+        assert "404" in msg or "inválido" in msg
 
 
 # =============================================================================
@@ -191,39 +163,33 @@ class TestSincronizarArquivo:
 class TestRotasSharePoint:
     def test_put_config_admin(self, client, login_admin):
         r = client.put("/api/config/sharepoint", json={
-            "site_url": "https://contoso.sharepoint.com/sites/Test",
-            "arquivo_precificacao": "Documentos/Precificacao.xlsx",
+            "link_precificacao": LINK_FAKE,
             "sync_no_startup": True,
         })
         assert r.status_code == 200
         data = r.get_json()
         assert data["sucesso"] is True
-        assert data["estado"]["sharepoint"]["site_url"] == "https://contoso.sharepoint.com/sites/Test"
+        assert data["estado"]["sharepoint"]["link_precificacao"] == LINK_FAKE
         assert data["estado"]["sharepoint"]["sync_no_startup"] is True
 
     def test_put_config_usuario_403(self, client, login_usuario):
-        r = client.put("/api/config/sharepoint", json={
-            "site_url": "https://contoso.sharepoint.com/sites/Test",
-        })
+        r = client.put("/api/config/sharepoint", json={"link_precificacao": LINK_FAKE})
         assert r.status_code == 403
 
     def test_testar_sem_credenciais_falha(self, client, login_admin, monkeypatch):
         monkeypatch.delenv("SHAREPOINT_TENANT_ID", raising=False)
         monkeypatch.delenv("SHAREPOINT_CLIENT_ID", raising=False)
         monkeypatch.delenv("SHAREPOINT_CLIENT_SECRET", raising=False)
-        client.put("/api/config/sharepoint", json={
-            "site_url": "https://contoso.sharepoint.com/sites/Test",
-        })
+        client.put("/api/config/sharepoint", json={"link_precificacao": LINK_FAKE})
         r = client.post("/api/config/sharepoint/testar")
         assert r.status_code == 400
         assert "Credenciais" in r.get_json().get("mensagem", "")
 
-    def test_testar_sem_config_falha(self, client, login_admin):
-        # Sem nenhuma config (site_url e/ou credenciais), retorna 400
+    def test_testar_sem_link_falha(self, client, login_admin):
         r = client.post("/api/config/sharepoint/testar")
         assert r.status_code == 400
 
-    def test_sincronizar_sem_config_falha(self, client, login_admin):
+    def test_sincronizar_sem_link_falha(self, client, login_admin):
         r = client.post("/api/config/sharepoint/sincronizar")
         assert r.status_code == 400
 
@@ -232,11 +198,13 @@ class TestRotasSharePoint:
         assert r.status_code == 200
         data = r.get_json()
         assert "sharepoint" in data
+        assert "link_precificacao" in data["sharepoint"]
         assert "credenciais_configuradas" in data["sharepoint"]
-        assert "site_url" in data["sharepoint"]
 
     @patch("core.sharepoint_client.requests.get")
-    def test_sincronizar_com_mock_grava_arquivo(self, mock_get, client, login_admin, app, tmp_path, monkeypatch):
+    def test_sincronizar_com_mock_grava_arquivo(
+        self, mock_get, client, login_admin, app, tmp_path, monkeypatch
+    ):
         monkeypatch.setenv("SHAREPOINT_TENANT_ID", TENANT_FAKE)
         monkeypatch.setenv("SHAREPOINT_CLIENT_ID", CLIENT_FAKE)
         monkeypatch.setenv("SHAREPOINT_CLIENT_SECRET", SECRET_FAKE)
@@ -246,33 +214,24 @@ class TestRotasSharePoint:
             cfg = app.config["APP_CONFIG"]
             cfg.arquivo_precificacao = destino
 
-        client.put("/api/config/sharepoint", json={
-            "site_url": "https://x.sharepoint.com/sites/Y",
-            "arquivo_precificacao": "Documentos/Preci.xlsx",
-        })
+        client.put("/api/config/sharepoint", json={"link_precificacao": LINK_FAKE})
 
-        mock_site = MagicMock(status_code=200)
-        mock_site.json.return_value = {"id": "site-x"}
-        mock_dl = MagicMock(status_code=200, content=b"BYTES_FROM_SP")
-        mock_get.side_effect = [mock_site, mock_dl]
-
-        # MSAL já está mockado pelo autouse fixture
+        mock_get.return_value = MagicMock(
+            status_code=200, ok=True, content=b"BYTES_FROM_SP"
+        )
         r = client.post("/api/config/sharepoint/sincronizar")
-
         assert r.status_code == 200, r.get_json()
         assert os.path.exists(destino)
         with open(destino, "rb") as f:
             assert f.read() == b"BYTES_FROM_SP"
 
     def test_credenciais_configuradas_flag(self, client, login_admin, monkeypatch):
-        # Sem credenciais
         monkeypatch.delenv("SHAREPOINT_TENANT_ID", raising=False)
         monkeypatch.delenv("SHAREPOINT_CLIENT_ID", raising=False)
         monkeypatch.delenv("SHAREPOINT_CLIENT_SECRET", raising=False)
         r = client.get("/api/config")
         assert r.get_json()["sharepoint"]["credenciais_configuradas"] is False
 
-        # Com credenciais
         monkeypatch.setenv("SHAREPOINT_TENANT_ID", TENANT_FAKE)
         monkeypatch.setenv("SHAREPOINT_CLIENT_ID", CLIENT_FAKE)
         monkeypatch.setenv("SHAREPOINT_CLIENT_SECRET", SECRET_FAKE)
