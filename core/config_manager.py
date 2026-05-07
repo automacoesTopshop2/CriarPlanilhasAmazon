@@ -74,10 +74,17 @@ class GerenciadorConfig:
     def _descobrir_caminho(self) -> str:
         """Define onde gravar o JSON.
 
-        Quando empacotado em .exe via PyInstaller, grava ao lado do
-        executável (modo portable). Em desenvolvimento, grava na raiz
-        do projeto.
+        Prioridade:
+          1. ``APP_CONFIG_PATH`` no ambiente — usado em deploy (Railway),
+             apontando para o volume persistente (ex.: /data/app_config.json).
+          2. Quando empacotado em .exe via PyInstaller, grava ao lado do
+             executável (modo portable).
+          3. Caso contrário, grava na raiz do projeto (desenvolvimento).
         """
+        env_path = os.getenv("APP_CONFIG_PATH", "").strip()
+        if env_path:
+            return env_path
+
         if getattr(sys, "frozen", False):
             base = Path(sys.executable).parent
         else:

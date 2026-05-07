@@ -1,0 +1,68 @@
+# Controle de versão / IDE
+.git
+.gitignore
+.github
+.vscode
+.idea
+*.swp
+
+# Estado local Claude / pytest / coverage
+.claude
+.pytest_cache
+.coverage
+htmlcov
+
+# Virtualenv local
+.venv
+venv
+env
+
+# Build / dist (apenas desktop)
+build
+dist
+*.spec
+exec/build
+exec/dist
+exec/__pycache__
+
+# Bytecode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Segredos
+.env
+*.env.local
+auth.db
+*.db
+*.db-journal
+cookie.txt
+site/instance
+
+# Bases de dados / planilhas reais (vão para o Volume, não para a imagem)
+Precificacao.xlsx
+Precificação.xlsx
+DESCRIÇÃO.xlsx
+DESCRICAO.xlsx
+CriarASIN.xlsx
+CriarSKU.xlsx
+outro.xlsx
+~$*
+
+# Termos editáveis em runtime (vão para o Volume)
+termos_remover.txt
+termos_substituir.txt
+app_config.json
+
+# Documentação que não precisa ir para a imagem
+GUIA_*.md
+RAILWAY.md
+README.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Templates/anexos pesados (não usados em runtime web)
+Templates de Criação

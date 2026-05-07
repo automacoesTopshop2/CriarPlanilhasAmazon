@@ -152,7 +152,17 @@ def create_app(config_overrides: Optional[Dict[str, Any]] = None) -> Flask:
             )
         secret_key = "dev-secret-change-me"
     app.config["SECRET_KEY"] = secret_key
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "sqlite:///auth.db")
+
+    # Railway/Heroku emitem DATABASE_URL no formato `postgres://` ou
+    # `postgresql://` (driver default psycopg2). Como o requirements usa
+    # psycopg3 (`psycopg[binary]`), normalizamos o prefixo para que o
+    # SQLAlchemy carregue o driver correto.
+    db_url = os.getenv("DATABASE_URL", "sqlite:///auth.db")
+    if db_url.startswith("postgres://"):
+        db_url = "postgresql+psycopg://" + db_url[len("postgres://"):]
+    elif db_url.startswith("postgresql://"):
+        db_url = "postgresql+psycopg://" + db_url[len("postgresql://"):]
+    app.config["SQLALCHEMY_DATABASE_URI"] = db_url
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
         "pool_pre_ping": True,
@@ -216,16 +226,16 @@ def create_app(config_overrides: Optional[Dict[str, Any]] = None) -> Flask:
         return redirect(url_for("auth.login", next=request.path))
 
     # ---- Rate Limiter ----
-    # IMPORTANTE: storage="memory://" só é seguro com SINGLE-PROCESS (1 worker
-    # com N threads). Em deploy multi-process (gunicorn workers, waitress
-    # processes>1) cada worker tem contador próprio — a proteção contra
-    # brute-force vira efetivamente N×limite. Use waitress single-process
-    # (ver `Iniciar Web Producao.bat`) ou migre para storage Redis antes
-    # de habilitar múltiplos processos.
+    # Quando REDIS_URL está definido (Railway), usa Redis como storage
+    # compartilhado entre workers — proteção contra brute-force funciona
+    # corretamente em deploy multi-process. Sem Redis, cai em memory://
+    # (válido apenas em single-process; ver `Iniciar Web Producao.bat`).
+    redis_url = os.getenv("REDIS_URL", "").strip()
+    limiter_storage = redis_url if redis_url else "memory://"
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
-        storage_uri="memory://",
+        storage_uri=limiter_storage,
         default_limits=[],
     )
     app.extensions["limiter"] = limiter
@@ -335,6 +345,12 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
             **extras,
         }
         job.log_queue.put(payload)
+
+    # --------------------------- Healthcheck ---------------------------
+    @app.route("/healthz")
+    def healthz():
+        # Endpoint público (sem auth) — usado pelo healthcheck do Railway.
+        return ("ok", 200, {"Content-Type": "text/plain; charset=utf-8"})
 
     # --------------------------- Páginas ---------------------------
     @app.route("/")

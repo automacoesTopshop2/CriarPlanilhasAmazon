@@ -29,6 +29,14 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///auth.db")
+
+# Railway/Heroku entregam DATABASE_URL como postgres://… ou postgresql://…;
+# o requirements usa psycopg3, então normalizamos para o driver explícito.
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgres://"):]
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://"):]
+
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 target_metadata = db.metadata

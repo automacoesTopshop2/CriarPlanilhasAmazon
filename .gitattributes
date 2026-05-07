@@ -1,0 +1,4 @@
+# Garante line endings LF para arquivos executados em Linux/container
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+.dockerignore text eol=lf
