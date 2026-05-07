@@ -251,11 +251,17 @@ def create_app(config_overrides: Optional[Dict[str, Any]] = None) -> Flask:
             "connect-src": "'self'",
             "frame-ancestors": "'none'",
         }
+        # force_https=False propositalmente: em produção a TLS é terminada
+        # no edge (Railway/Cloudflare) e o tráfego interno chega via HTTP.
+        # ProxyFix normaliza X-Forwarded-Proto para clients reais, mas o
+        # healthcheck interno do Railway não envia esse header — com
+        # force_https=True o /healthz retornaria 302 e o deploy ficaria
+        # unhealthy. HSTS continua sendo emitido para os clientes externos.
         Talisman(
             app,
             content_security_policy=csp,
             content_security_policy_nonce_in=["script-src"],
-            force_https=is_prod,
+            force_https=False,
             strict_transport_security=is_prod,
             session_cookie_secure=app.config["SESSION_COOKIE_SECURE"],
             frame_options="DENY",
