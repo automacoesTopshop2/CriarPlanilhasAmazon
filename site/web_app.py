@@ -394,9 +394,14 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
                 "atualizado_em": atualizado_em,
                 "tamanho": tamanho,
             }
+        gerenciador = app.config.get("CONFIG_MANAGER")
+        sharepoint_configurado = bool(
+            gerenciador and (gerenciador.get("sharepoint_link_precificacao") or "").strip()
+        )
         return {
             "precificacao": _info(cfg_atual.arquivo_precificacao),
             "descricao": _info(cfg_atual.arquivo_descricao),
+            "sharepoint_configurado": sharepoint_configurado,
         }
 
     def _push_log(job, tipo, mensagem, **extras):
@@ -645,39 +650,48 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
     @app.route("/api/jobs/<job_id>/download")
     @login_required
     def api_job_download(job_id):
-        # Caminho rápido: resultado ainda em memória deste worker.
-        job = JOBS.get(job_id)
-        if job and job.resultado and job.resultado.arquivo_saida:
-            if job.owner_id and current_user.id != job.owner_id and not current_user.is_admin:
-                abort(403)
-            job.resultado.arquivo_saida.seek(0)
-            return send_file(
-                job.resultado.arquivo_saida,
-                as_attachment=True,
-                download_name=job.resultado.nome_arquivo,
-                mimetype="application/vnd.ms-excel.sheet.macroEnabled.12",
-            )
-
-        # Fallback: lê do disco. Cobre caso de download cair em worker
-        # diferente do que processou (gunicorn multi-worker) e também
-        # sobrevive a restart de container (volume persistente).
+        # Disco é a fonte canônica. Servir sempre dele evita dois bugs
+        # comuns em deploys multi-worker:
+        #   1) JOBS é per-worker — request pode cair num processo que não
+        #      processou o job → 404 → navegador salva HTML como .htm.
+        #   2) BytesIO em send_file pode ser fechado pelo wrap do werkzeug
+        #      após a 1ª resposta — clicar "baixar" de novo gera 500/HTML.
+        # Fallback de memória só serve se o persist em disco falhou.
         base = _jobs_storage_dir()
         arquivo_path = os.path.join(base, f"{job_id}.xlsm")
         meta_path = os.path.join(base, f"{job_id}.json")
-        if not (os.path.exists(arquivo_path) and os.path.exists(meta_path)):
+
+        if os.path.exists(arquivo_path) and os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                abort(500)
+            owner_id = meta.get("owner_id")
+            if owner_id and current_user.id != owner_id and not current_user.is_admin:
+                abort(403)
+            return send_file(
+                arquivo_path,
+                as_attachment=True,
+                download_name=meta.get("nome_arquivo") or "planilha.xlsm",
+                mimetype="application/vnd.ms-excel.sheet.macroEnabled.12",
+            )
+
+        # Disco indisponível: tenta a cópia em memória (cria buffer novo
+        # para evitar issues de stream fechado em downloads repetidos).
+        job = JOBS.get(job_id)
+        if not job or not job.resultado or not job.resultado.arquivo_saida:
             abort(404)
-        try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-        except (OSError, json.JSONDecodeError):
-            abort(500)
-        owner_id = meta.get("owner_id")
-        if owner_id and current_user.id != owner_id and not current_user.is_admin:
+        if job.owner_id and current_user.id != job.owner_id and not current_user.is_admin:
             abort(403)
+        try:
+            conteudo = job.resultado.arquivo_saida.getvalue()
+        except (ValueError, AttributeError):
+            abort(404)
         return send_file(
-            arquivo_path,
+            io.BytesIO(conteudo),
             as_attachment=True,
-            download_name=meta.get("nome_arquivo") or "planilha.xlsm",
+            download_name=job.resultado.nome_arquivo,
             mimetype="application/vnd.ms-excel.sheet.macroEnabled.12",
         )
 

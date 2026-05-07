@@ -418,9 +418,12 @@ def api_sharepoint_testar():
 
 @config_bp.route("/api/config/sharepoint/sincronizar", methods=["POST"])
 @login_required
-@requer_admin
 def api_sharepoint_sincronizar():
-    """Baixa a Precificação via share-link e grava no path local."""
+    """Baixa a Precificação via share-link e grava no path local.
+
+    Aberto a qualquer usuário autenticado: o link é configurado pelo
+    admin, então o sync apenas atualiza o arquivo local — não há
+    superfície de ataque (usuário não escolhe a URL)."""
     _csrf()
     g = _gerenciador()
     cfg = _config_app()

@@ -225,6 +225,39 @@ class TestRotasSharePoint:
         with open(destino, "rb") as f:
             assert f.read() == b"BYTES_FROM_SP"
 
+    @patch("core.sharepoint_client.requests.get")
+    def test_sincronizar_aceita_usuario_comum(
+        self, mock_get, client, login_admin, login_usuario, app, tmp_path, monkeypatch
+    ):
+        """Sync deve estar aberto para qualquer usuário autenticado.
+        Admin configura o link primeiro; depois usuário comum dispara o sync."""
+        monkeypatch.setenv("SHAREPOINT_TENANT_ID", TENANT_FAKE)
+        monkeypatch.setenv("SHAREPOINT_CLIENT_ID", CLIENT_FAKE)
+        monkeypatch.setenv("SHAREPOINT_CLIENT_SECRET", SECRET_FAKE)
+
+        destino = str(tmp_path / "preci.xlsx")
+        with app.app_context():
+            cfg = app.config["APP_CONFIG"]
+            cfg.arquivo_precificacao = destino
+
+        # Admin configura o link
+        client.put("/api/config/sharepoint", json={"link_precificacao": LINK_FAKE})
+        # Loga como usuário comum
+        client.post("/logout")
+        r = client.post(
+            "/login",
+            data={"email": "user@topshop.com.br", "senha": "SenhaForte456@"},
+            follow_redirects=False,
+        )
+        assert r.status_code == 302
+
+        mock_get.return_value = MagicMock(
+            status_code=200, ok=True, content=b"BYTES_USR"
+        )
+        r = client.post("/api/config/sharepoint/sincronizar")
+        assert r.status_code == 200, r.get_json()
+        assert open(destino, "rb").read() == b"BYTES_USR"
+
     def test_credenciais_configuradas_flag(self, client, login_admin, monkeypatch):
         monkeypatch.delenv("SHAREPOINT_TENANT_ID", raising=False)
         monkeypatch.delenv("SHAREPOINT_CLIENT_ID", raising=False)

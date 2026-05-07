@@ -1,7 +1,13 @@
 """Testes da página de configurações e API CRUD."""
 
+import pytest
+
 from auth import db
 from core.config_manager import GerenciadorConfig
+import core.config_manager as _cfg_mod
+
+# Captura o método original ANTES do autouse `_isolar_app_config` patchear.
+_DESCOBRIR_ORIGINAL = _cfg_mod.GerenciadorConfig._descobrir_caminho
 
 
 class TestPaginaConfig:
@@ -184,3 +190,61 @@ class TestGerenciadorConfigCRUD:
         g.adicionar_prefixo("ABC", "X")
         assert "ABC-" in g.mapa_prefixo_conta()
         assert "ABC" not in g.mapa_prefixo_conta()
+
+
+class TestDescobrirCaminho:
+    """Resolução do caminho do app_config.json — crítico para persistência
+    em deploys Docker/Railway, onde o config DEVE ir para o volume montado."""
+
+    @pytest.fixture(autouse=True)
+    def _restaurar_descobrir(self, monkeypatch):
+        """Reverte o patch do conftest autouse para testar a lógica real."""
+        monkeypatch.setattr(
+            _cfg_mod.GerenciadorConfig,
+            "_descobrir_caminho",
+            _DESCOBRIR_ORIGINAL,
+        )
+
+    def test_app_config_path_tem_prioridade_maxima(self, monkeypatch, tmp_path):
+        custom = str(tmp_path / "custom.json")
+        monkeypatch.setenv("APP_CONFIG_PATH", custom)
+        monkeypatch.setenv("DATA_DIR", "/data")  # ignorado
+        g = GerenciadorConfig()
+        assert g.caminho_arquivo == custom
+
+    def test_data_dir_tem_prioridade_sobre_default(self, monkeypatch, tmp_path):
+        """Sem APP_CONFIG_PATH, mas com DATA_DIR (Railway/Docker), grava em
+        $DATA_DIR/app_config.json — não no /app efêmero do container."""
+        monkeypatch.delenv("APP_CONFIG_PATH", raising=False)
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        g = GerenciadorConfig()
+        assert g.caminho_arquivo == str(tmp_path / "app_config.json")
+
+    def test_persistencia_via_data_dir_sobrevive_nova_instancia(
+        self, monkeypatch, tmp_path
+    ):
+        """Regressão: editar SharePoint link e mapeamentos deve persistir
+        entre execuções quando DATA_DIR aponta para volume."""
+        monkeypatch.delenv("APP_CONFIG_PATH", raising=False)
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        g1 = GerenciadorConfig()
+        g1.set("sharepoint_link_precificacao", "https://exemplo.com/x")
+        g1.adicionar_prefixo("XYZ", "MinhaConta")
+        # Nova instância simula reinício de container
+        g2 = GerenciadorConfig()
+        assert g2.get("sharepoint_link_precificacao") == "https://exemplo.com/x"
+        assert g2.mapa_prefixo_conta()["XYZ-"] == "MinhaConta"
+
+    def test_remocao_persiste_apos_nova_instancia(self, monkeypatch, tmp_path):
+        """Regressão: remover entrada errada não deve "voltar" depois de
+        reiniciar — bug que acontecia quando o JSON ia para /app efêmero."""
+        monkeypatch.delenv("APP_CONFIG_PATH", raising=False)
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        g1 = GerenciadorConfig()
+        g1.adicionar_prefixo("DEL", "Conta")
+        assert "DEL-" in g1.mapa_prefixo_conta()
+        g1.remover_prefixo("DEL-")
+        # Nova instância — a remoção deve persistir
+        g2 = GerenciadorConfig()
+        assert "DEL-" not in g2.mapa_prefixo_conta()
+        assert "DEL-" in g2.dados.get("prefixos_excluidos", [])

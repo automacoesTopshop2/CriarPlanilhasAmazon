@@ -13,6 +13,7 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PORT=8080 \
     DATA_DIR=/data \
+    APP_CONFIG_PATH=/data/app_config.json \
     ENV=production
 
 WORKDIR /app

@@ -29,27 +29,37 @@
             <span class="badge badge--info" id="count-remover">{{ termos_remover|length }}</span>
         </div>
         <div class="card__body">
-            <table class="tbl" id="tbl-remover">
-                <thead><tr><th>Termo</th><th class="col-w-48"></th></tr></thead>
-                <tbody>
-                {% for termo in termos_remover %}
-                    <tr data-termo="{{ termo }}">
-                        <td>{{ termo }}</td>
-                        <td>
-                            <button class="tbl-icon-btn" data-action="del-remover" data-termo="{{ termo }}" title="Remover">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/></svg>
-                            </button>
-                        </td>
-                    </tr>
-                {% else %}
-                    <tr><td colspan="2" class="tbl__empty">Nenhum termo cadastrado.</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
-            <form id="form-remover" class="input-group mt-4" autocomplete="off">
+            <form id="form-remover" class="input-group" autocomplete="off">
                 <input id="input-remover" class="input" placeholder="Novo termo a remover..." />
                 <button class="btn btn--primary" type="submit">Adicionar</button>
             </form>
+            <details class="collapse mt-4">
+                <summary>
+                    <span>Ver lista (<span id="count-remover-inline">{{ termos_remover|length }}</span>)</span>
+                </summary>
+                <div class="collapse__filter">
+                    <input class="input" data-filter-target="tbl-remover" placeholder="Filtrar termos..." />
+                </div>
+                <div class="collapse__body">
+                    <table class="tbl" id="tbl-remover">
+                        <thead><tr><th>Termo</th><th class="col-w-48"></th></tr></thead>
+                        <tbody>
+                        {% for termo in termos_remover %}
+                            <tr data-termo="{{ termo }}">
+                                <td>{{ termo }}</td>
+                                <td>
+                                    <button class="tbl-icon-btn" data-action="del-remover" data-termo="{{ termo }}" title="Remover">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/></svg>
+                                    </button>
+                                </td>
+                            </tr>
+                        {% else %}
+                            <tr><td colspan="2" class="tbl__empty">Nenhum termo cadastrado.</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </details>
         </div>
     </div>
 
@@ -63,29 +73,39 @@
             <span class="badge badge--info" id="count-substituir">{{ termos_substituir|length }}</span>
         </div>
         <div class="card__body">
-            <table class="tbl" id="tbl-substituir">
-                <thead><tr><th>Antigo</th><th>Novo</th><th class="col-w-48"></th></tr></thead>
-                <tbody>
-                {% for antigo, novo in termos_substituir.items() %}
-                    <tr data-antigo="{{ antigo }}">
-                        <td>{{ antigo }}</td>
-                        <td>{{ novo }}</td>
-                        <td>
-                            <button class="tbl-icon-btn" data-action="del-substituir" data-antigo="{{ antigo }}" title="Remover">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/></svg>
-                            </button>
-                        </td>
-                    </tr>
-                {% else %}
-                    <tr><td colspan="3" class="tbl__empty">Nenhum par cadastrado.</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
-            <form id="form-substituir" class="input-group mt-4" autocomplete="off">
+            <form id="form-substituir" class="input-group" autocomplete="off">
                 <input id="input-antigo" class="input" placeholder="Termo antigo..." />
                 <input id="input-novo" class="input" placeholder="Substituir por..." />
                 <button class="btn btn--primary" type="submit">Adicionar</button>
             </form>
+            <details class="collapse mt-4">
+                <summary>
+                    <span>Ver lista (<span id="count-substituir-inline">{{ termos_substituir|length }}</span>)</span>
+                </summary>
+                <div class="collapse__filter">
+                    <input class="input" data-filter-target="tbl-substituir" placeholder="Filtrar pares..." />
+                </div>
+                <div class="collapse__body">
+                    <table class="tbl" id="tbl-substituir">
+                        <thead><tr><th>Antigo</th><th>Novo</th><th class="col-w-48"></th></tr></thead>
+                        <tbody>
+                        {% for antigo, novo in termos_substituir.items() %}
+                            <tr data-antigo="{{ antigo }}">
+                                <td>{{ antigo }}</td>
+                                <td>{{ novo }}</td>
+                                <td>
+                                    <button class="tbl-icon-btn" data-action="del-substituir" data-antigo="{{ antigo }}" title="Remover">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/></svg>
+                                    </button>
+                                </td>
+                            </tr>
+                        {% else %}
+                            <tr><td colspan="3" class="tbl__empty">Nenhum par cadastrado.</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </details>
         </div>
     </div>
 </div>

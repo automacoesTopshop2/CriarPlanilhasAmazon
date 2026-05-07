@@ -335,6 +335,30 @@
 
         uploadBase('input-upload-preco', '/api/bases/precificacao/upload', 'Falha no upload da Precificação');
         uploadBase('input-upload-desc', '/api/bases/descricao/upload', 'Falha no upload da Descrição');
+
+        const btnSync = document.getElementById('btn-sync-sharepoint');
+        if (btnSync) {
+            btnSync.addEventListener('click', async () => {
+                if (btnSync.classList.contains('is-spinning')) return;
+                btnSync.classList.add('is-spinning');
+                btnSync.disabled = true;
+                try {
+                    const r = await fetch('/api/config/sharepoint/sincronizar', {
+                        method: 'POST',
+                        headers: { 'X-CSRFToken': csrf() },
+                    });
+                    const data = await r.json();
+                    toast(data.mensagem || (data.sucesso ? 'Precificação atualizada' : 'Falha ao sincronizar'),
+                          data.sucesso ? 'ok' : 'err');
+                    if (data.sucesso) setTimeout(() => location.reload(), 800);
+                } catch (e) {
+                    toast('Falha ao sincronizar: ' + e, 'err');
+                } finally {
+                    btnSync.classList.remove('is-spinning');
+                    btnSync.disabled = false;
+                }
+            });
+        }
     }
 
     // ==========================================================
@@ -402,6 +426,20 @@
                 await deletarTermoSubstituir(antigo);
             }
         });
+
+        // Filtro local sobre as listas colapsáveis
+        document.querySelectorAll('input[data-filter-target]').forEach(inp => {
+            inp.addEventListener('input', () => {
+                const tabela = document.getElementById(inp.dataset.filterTarget);
+                if (!tabela) return;
+                const q = inp.value.trim().toLowerCase();
+                tabela.querySelectorAll('tbody tr').forEach(tr => {
+                    if (tr.querySelector('.tbl__empty')) return;
+                    const txt = tr.textContent.toLowerCase();
+                    tr.style.display = (!q || txt.includes(q)) ? '' : 'none';
+                });
+            });
+        });
     }
     window.initLimpezaTermos = initLimpezaTermos;
 
@@ -415,8 +453,10 @@
     function renderTermosRemover(lista) {
         const tbody = document.querySelector('#tbl-remover tbody');
         const counter = document.getElementById('count-remover');
+        const counterInline = document.getElementById('count-remover-inline');
         if (!tbody) return;
-        counter.textContent = lista.length;
+        if (counter) counter.textContent = lista.length;
+        if (counterInline) counterInline.textContent = lista.length;
         if (!lista.length) {
             tbody.innerHTML = '<tr><td colspan="2" class="tbl__empty">Nenhum termo cadastrado.</td></tr>';
             return;
@@ -436,8 +476,10 @@
     function renderTermosSubstituir(lista) {
         const tbody = document.querySelector('#tbl-substituir tbody');
         const counter = document.getElementById('count-substituir');
+        const counterInline = document.getElementById('count-substituir-inline');
         if (!tbody) return;
-        counter.textContent = lista.length;
+        if (counter) counter.textContent = lista.length;
+        if (counterInline) counterInline.textContent = lista.length;
         if (!lista.length) {
             tbody.innerHTML = '<tr><td colspan="3" class="tbl__empty">Nenhum par cadastrado.</td></tr>';
             return;

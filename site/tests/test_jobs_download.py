@@ -96,6 +96,58 @@ class TestDownloadFallbackDisco:
         assert r.status_code == 200
         assert r.data == b"bytes-admin"
 
+    def test_dois_downloads_consecutivos_funcionam(
+        self, client, login_usuario, usuario, jobs_dir
+    ):
+        """Regressão: clicar no botão de baixar 2x não deve voltar HTML."""
+        web_app.JOBS.clear()
+        job_id = "duasVezesJob"
+        conteudo = b"PK\x03\x04bytes-do-xlsm"
+        _gravar_job_em_disco(
+            jobs_dir, job_id, conteudo,
+            nome_arquivo="planilha.xlsm",
+            owner_id=usuario,
+        )
+
+        r1 = client.get(f"/api/jobs/{job_id}/download")
+        assert r1.status_code == 200
+        assert r1.data == conteudo
+
+        r2 = client.get(f"/api/jobs/{job_id}/download")
+        assert r2.status_code == 200
+        assert r2.data == conteudo
+
+
+class TestFallbackMemoria:
+    def test_baixa_de_memoria_quando_disco_indisponivel(
+        self, client, login_usuario, usuario, monkeypatch, tmp_path
+    ):
+        """Se o persist em disco falhou, ainda servimos da memória."""
+        import io as _io
+        from core.processadores.base import ResultadoProcessamento
+
+        # JOBS_STORAGE_DIR aponta para diretório vazio (sem arquivo do job)
+        monkeypatch.setenv("JOBS_STORAGE_DIR", str(tmp_path))
+
+        job = web_app.Job("sku", owner_id=usuario)
+        job.resultado = ResultadoProcessamento(
+            sucesso=True,
+            arquivo_saida=_io.BytesIO(b"so-em-memoria"),
+            nome_arquivo="memoria.xlsm",
+        )
+        web_app.JOBS[job.id] = job
+        try:
+            r1 = client.get(f"/api/jobs/{job.id}/download")
+            assert r1.status_code == 200
+            assert r1.data == b"so-em-memoria"
+
+            # 2ª chamada também precisa funcionar (BytesIO fresco a cada send)
+            r2 = client.get(f"/api/jobs/{job.id}/download")
+            assert r2.status_code == 200
+            assert r2.data == b"so-em-memoria"
+        finally:
+            web_app.JOBS.pop(job.id, None)
+
 
 class TestPersistenciaEmDisco:
     def test_jobs_storage_dir_default_usa_data_dir(self, monkeypatch, tmp_path):

@@ -75,15 +75,22 @@ class GerenciadorConfig:
         """Define onde gravar o JSON.
 
         Prioridade:
-          1. ``APP_CONFIG_PATH`` no ambiente — usado em deploy (Railway),
-             apontando para o volume persistente (ex.: /data/app_config.json).
-          2. Quando empacotado em .exe via PyInstaller, grava ao lado do
+          1. ``APP_CONFIG_PATH`` no ambiente — override explícito.
+          2. ``DATA_DIR`` (Railway/Docker) — grava em ``$DATA_DIR/app_config.json``,
+             que aponta para o volume persistente. Sem isso o JSON cai em
+             ``/app`` (filesystem efêmero do container) e é perdido a cada
+             redeploy/restart, fazendo edições "voltarem" para o default.
+          3. Quando empacotado em .exe via PyInstaller, grava ao lado do
              executável (modo portable).
-          3. Caso contrário, grava na raiz do projeto (desenvolvimento).
+          4. Caso contrário, grava na raiz do projeto (desenvolvimento).
         """
         env_path = os.getenv("APP_CONFIG_PATH", "").strip()
         if env_path:
             return env_path
+
+        data_dir = os.getenv("DATA_DIR", "").strip()
+        if data_dir:
+            return str(Path(data_dir) / self.NOME_ARQUIVO)
 
         if getattr(sys, "frozen", False):
             base = Path(sys.executable).parent
