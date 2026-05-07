@@ -75,6 +75,47 @@ JOBS: Dict[str, Job] = {}
 JOBS_LOCK = threading.Lock()
 
 
+# ---- Persistência em disco para resultados ---------------------------------
+# JOBS é per-worker. Quando gunicorn roda com >1 worker, o /download pode
+# cair num processo diferente do que processou e o job não está em memória.
+# Persistimos o resultado em disco (volume Railway) para o /download poder
+# ler de lá; também sobrevive a restart de container.
+
+def _jobs_storage_dir() -> str:
+    base = os.getenv("JOBS_STORAGE_DIR")
+    if not base:
+        data_dir = os.getenv("DATA_DIR") or os.path.join(_root, "_data")
+        base = os.path.join(data_dir, "jobs")
+    os.makedirs(base, exist_ok=True)
+    return base
+
+
+def _persistir_resultado_em_disco(job_id: str, resultado, owner_id: Optional[str], tipo: str) -> None:
+    """Grava arquivo_saida em <jobs_dir>/{id}.xlsm + sidecar {id}.json.
+    Chamada após processamento bem-sucedido. Erros não derrubam o job."""
+    if not resultado or not resultado.arquivo_saida or not resultado.sucesso:
+        return
+    try:
+        base = _jobs_storage_dir()
+        arquivo_path = os.path.join(base, f"{job_id}.xlsm")
+        meta_path = os.path.join(base, f"{job_id}.json")
+        resultado.arquivo_saida.seek(0)
+        with open(arquivo_path, "wb") as f:
+            f.write(resultado.arquivo_saida.getvalue())
+        meta = {
+            "nome_arquivo": resultado.nome_arquivo or "planilha.xlsm",
+            "owner_id": owner_id,
+            "tipo": tipo,
+            "criado_em": datetime.now().isoformat(),
+        }
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False)
+        resultado.arquivo_saida.seek(0)
+    except OSError:
+        # Volume cheio / sem permissão — segue só com a cópia em memória.
+        pass
+
+
 def _limpar_jobs_antigos(horas: int = 2) -> None:
     agora = datetime.now()
     with JOBS_LOCK:
@@ -83,6 +124,21 @@ def _limpar_jobs_antigos(horas: int = 2) -> None:
                 idade = (agora - job.criado_em).total_seconds() / 3600
                 if idade > horas:
                     JOBS.pop(jid, None)
+    # Limpa também os artefatos em disco
+    try:
+        base = _jobs_storage_dir()
+        limite = agora.timestamp() - horas * 3600
+        for nome in os.listdir(base):
+            if not (nome.endswith(".xlsm") or nome.endswith(".json")):
+                continue
+            caminho = os.path.join(base, nome)
+            try:
+                if os.path.getmtime(caminho) < limite:
+                    os.remove(caminho)
+            except OSError:
+                continue
+    except OSError:
+        pass
 
 
 # ==============================================================================
@@ -503,6 +559,7 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
                 _push_log(job, "log", f"[{log.tipo}] {log.sku}: {log.mensagem}", nivel=log.tipo)
             job.resultado = resultado
             if resultado.sucesso:
+                _persistir_resultado_em_disco(job.id, resultado, job.owner_id, job.tipo)
                 job.status = "done"
                 _push_log(job, "done", resultado.mensagem or "Concluído.",
                           total=resultado.total_processados, erros=resultado.total_erros,
@@ -588,16 +645,39 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
     @app.route("/api/jobs/<job_id>/download")
     @login_required
     def api_job_download(job_id):
+        # Caminho rápido: resultado ainda em memória deste worker.
         job = JOBS.get(job_id)
-        if not job or not job.resultado or not job.resultado.arquivo_saida:
+        if job and job.resultado and job.resultado.arquivo_saida:
+            if job.owner_id and current_user.id != job.owner_id and not current_user.is_admin:
+                abort(403)
+            job.resultado.arquivo_saida.seek(0)
+            return send_file(
+                job.resultado.arquivo_saida,
+                as_attachment=True,
+                download_name=job.resultado.nome_arquivo,
+                mimetype="application/vnd.ms-excel.sheet.macroEnabled.12",
+            )
+
+        # Fallback: lê do disco. Cobre caso de download cair em worker
+        # diferente do que processou (gunicorn multi-worker) e também
+        # sobrevive a restart de container (volume persistente).
+        base = _jobs_storage_dir()
+        arquivo_path = os.path.join(base, f"{job_id}.xlsm")
+        meta_path = os.path.join(base, f"{job_id}.json")
+        if not (os.path.exists(arquivo_path) and os.path.exists(meta_path)):
             abort(404)
-        if job.owner_id and current_user.id != job.owner_id and not current_user.is_admin:
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            abort(500)
+        owner_id = meta.get("owner_id")
+        if owner_id and current_user.id != owner_id and not current_user.is_admin:
             abort(403)
-        job.resultado.arquivo_saida.seek(0)
         return send_file(
-            job.resultado.arquivo_saida,
+            arquivo_path,
             as_attachment=True,
-            download_name=job.resultado.nome_arquivo,
+            download_name=meta.get("nome_arquivo") or "planilha.xlsm",
             mimetype="application/vnd.ms-excel.sheet.macroEnabled.12",
         )
 
