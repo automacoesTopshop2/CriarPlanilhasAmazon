@@ -384,6 +384,61 @@ def test_criar_sku_propaga_429(client, app, monkeypatch):
 # /api/processar/sku-manual com sku_market pré-resolvido
 # ---------------------------------------------------------------------------
 
+def test_sku_manual_job_termina_em_done_sem_atribuir_slot_invalido(client, app,
+                                                                   monkeypatch):
+    """Regressão: ao introduzir `job.skus_market = ...` o __slots__ do Job
+    fez a thread explodir com AttributeError dentro do try/except, marcando
+    o job como 'error'. Patch threading.Thread para rodar inline, depois
+    inspeciona o status final do job."""
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
+    _criar_usuario_com_codigo_externo(app, codigo="op-regress")
+    _login(client, "op@topshop.com.br", "SenhaForte123!")
+
+    import threading
+    threads_iniciadas = []
+
+    class ThreadInline:
+        def __init__(self, target, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+            self.kwargs = kwargs or {}
+
+        def start(self):
+            self.target(*self.args, **self.kwargs)
+
+    monkeypatch.setattr(threading, "Thread", ThreadInline)
+
+    fd = {
+        "entradas": json.dumps([{
+            "sku_raiz": "ABC123", "conta_codigo": "BOX2",
+            "marca": "Top", "ean": "789",
+            "sku_market": "BOX2-ABC123", "versao": 1,
+        }]),
+        "arquivo_template": (_template_xlsm(), "tpl.xlsm"),
+    }
+    r = client.post("/api/processar/sku-manual",
+                    data=fd, content_type="multipart/form-data")
+    assert r.status_code == 200
+    job_id = r.get_json()["job_id"]
+    # Com ThreadInline, o job já terminou. Importa o JOBS store e confere.
+    from web_app import JOBS
+    job = JOBS[job_id]
+    # O __slots__ não deve ter sido violado. Pode ter terminado em 'done'
+    # (se processador rodou ok) ou 'error' por outra razão — mas NÃO por
+    # AttributeError de skus_market.
+    assert job.status in ("done", "error"), f"status inesperado: {job.status}"
+    # Drena a fila pra ver se a mensagem 'skus_market' aparece como exceção
+    logs = []
+    while not job.log_queue.empty():
+        logs.append(job.log_queue.get_nowait())
+    erros_sobre_slot = [
+        l for l in logs
+        if isinstance(l.get("mensagem"), str)
+        and "skus_market" in l["mensagem"]
+    ]
+    assert not erros_sobre_slot, f"regressão: {erros_sobre_slot}"
+
+
 def test_sku_manual_aceita_sku_market_pre_resolvido(client, app, monkeypatch):
     """Quando o sku_market já vem do passo 'Solicitar', a rota não deve
     chamar criar_sku de novo."""

@@ -249,8 +249,9 @@ h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 .grid { display: grid; gap: var(--space-5); }
 .grid--2 { grid-template-columns: repeat(2, 1fr); }
 .grid--3 { grid-template-columns: repeat(3, 1fr); }
+.grid--4 { grid-template-columns: repeat(4, 1fr); }
 @media (max-width: 900px) {
-    .grid--2, .grid--3 { grid-template-columns: 1fr; }
+    .grid--2, .grid--3, .grid--4 { grid-template-columns: 1fr; }
 }
 
 /* ---------- Stat card (dashboard) ---------- */

@@ -90,24 +90,33 @@
             </div>
         </div>
 
-        <div class="grid grid--2 mt-6">
+        <div class="grid grid--4 mt-6">
             <div class="field">
-                <label class="label" for="manual-lote">Colar lote</label>
-                <textarea id="manual-lote" rows="4" class="select"
-                          placeholder="ASIN,SKU&#10;B08XXXXXXX,ABC123&#10;B09YYYYYYY,XYZ987&#10;..."></textarea>
-                <div class="manual-actions">
-                    <button type="button" class="btn btn--sm btn--dark" id="btn-importar-lote">Importar para a tabela</button>
-                    <button type="button" class="btn btn--sm btn--ghost" id="btn-add-linha">+ adicionar 1 linha</button>
-                    <button type="button" class="btn btn--sm btn--ghost" id="btn-limpar-tabela">limpar tabela</button>
-                </div>
+                <label class="label" for="manual-lote-asin">ASIN (1 por linha)</label>
+                <textarea id="manual-lote-asin" rows="6" class="select" placeholder="B08XXXXXXX&#10;B09YYYYYYY&#10;..."></textarea>
             </div>
-
+            <div class="field">
+                <label class="label" for="manual-lote">SKU Raiz (1 por linha, mesma ordem)</label>
+                <textarea id="manual-lote" rows="6" class="select" placeholder="ABC123&#10;XYZ987&#10;..."></textarea>
+            </div>
+            <div class="field">
+                <label class="label" for="manual-lote-ean">EAN da empresa (1 por linha, mesma ordem)</label>
+                <textarea id="manual-lote-ean" rows="6" class="select" placeholder="7891234567890&#10;7899876543210&#10;..."></textarea>
+            </div>
             <div class="field">
                 <label class="label">Template ListaASINS (.xlsm)</label>
                 {% with id_suffix="template-manual", accept=".xlsm", label="Solte o template Amazon", sublabel="ou clique para selecionar (.xlsm)" %}
                     {% include "_dropzone.html" %}
                 {% endwith %}
             </div>
+        </div>
+        <div class="manual-actions">
+            <button type="button" class="btn btn--sm btn--dark" id="btn-importar-lote">Importar para a tabela</button>
+            <button type="button" class="btn btn--sm btn--ghost" id="btn-add-linha">+ adicionar 1 linha</button>
+            <button type="button" class="btn btn--sm btn--ghost" id="btn-limpar-tabela">limpar tabela</button>
+            <button type="button" class="btn btn--sm btn--primary" id="btn-solicitar-todos">
+                Solicitar SKU-Market de todos
+            </button>
         </div>
 
         <table class="tbl-manual" id="tbl-manual">

@@ -656,18 +656,21 @@
             else btnProcessar.title = '';
         }
 
-        // ---- clique em "Solicitar SKU-Market" ----
-        tbody.addEventListener('click', async (e) => {
-            const btn = e.target.closest('[data-role="solicitar-sku-market"]');
-            if (!btn) return;
-            const tr = btn.closest('tr');
+        // ---- solicitar SKU-Market de UMA linha ----
+        // Retorna {ok:bool, msg?:string} para que o "solicitar todos" possa
+        // decidir se aborta o lote ou continua.
+        async function solicitarLinha(tr, {silentToast = false} = {}) {
+            if (tr.dataset.skuMarket) return { ok: true, ja: true };
+            const btn = tr.querySelector('[data-role="solicitar-sku-market"]');
             const sku = (tr.querySelector('[data-field="sku_raiz"]').value || '').trim();
             const conta = (tr.querySelector('[data-field="conta_codigo"]').value || '').trim();
             const asin = opts.comAsin
                 ? (tr.querySelector('[data-field="asin"]').value || '').trim()
                 : '';
-            btn.disabled = true;
-            btn.textContent = '...';
+            if (!sku || !conta || (opts.comAsin && !asin)) {
+                return { ok: false, msg: 'campos obrigatórios faltando' };
+            }
+            if (btn) { btn.disabled = true; btn.textContent = '...'; }
             try {
                 const r = await fetch(opts.endpointCriarSku, {
                     method: 'POST',
@@ -677,10 +680,11 @@
                 const data = await r.json();
                 if (!r.ok || !data.sucesso) {
                     const det = data.detalhe ? ` (${data.detalhe})` : '';
-                    toast((data.mensagem || 'Falha BDAmazon') + det, 'err');
-                    btn.disabled = false;
-                    btn.textContent = 'Solicitar';
-                    return;
+                    const msg = (data.mensagem || 'Falha BDAmazon') + det;
+                    if (!silentToast) toast(msg, 'err');
+                    if (btn) { btn.disabled = false; btn.textContent = 'Solicitar'; }
+                    // 429 → sinaliza para parar o lote
+                    return { ok: false, msg, status: r.status };
                 }
                 tr.dataset.skuMarket = data.sku_market;
                 tr.dataset.versao = String(data.versao || 1);
@@ -689,18 +693,61 @@
                     <code style="font-size:12px">${escape(data.sku_market)}</code>
                     <small style="color:var(--text-muted);display:block">v${escape(String(data.versao))}</small>
                 `;
-                // Trava os campos da linha resolvidos (sku_raiz, conta, asin)
                 tr.querySelector('[data-field="sku_raiz"]').readOnly = true;
                 tr.querySelector('[data-field="conta_codigo"]').disabled = true;
                 if (opts.comAsin) tr.querySelector('[data-field="asin"]').readOnly = true;
-                toast(`SKU-Market criado: ${data.sku_market}`, 'ok');
+                if (!silentToast) toast(`SKU-Market criado: ${data.sku_market}`, 'ok');
                 atualizarBotaoProcessar();
+                return { ok: true };
             } catch (err) {
-                toast('Erro de rede: ' + err, 'err');
-                btn.disabled = false;
-                btn.textContent = 'Solicitar';
+                if (!silentToast) toast('Erro de rede: ' + err, 'err');
+                if (btn) { btn.disabled = false; btn.textContent = 'Solicitar'; }
+                return { ok: false, msg: String(err) };
             }
+        }
+
+        // Clique individual
+        tbody.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-role="solicitar-sku-market"]');
+            if (!btn) return;
+            solicitarLinha(btn.closest('tr'));
         });
+
+        // ---- botão "Solicitar SKU-Market de todos" ----
+        const btnTodos = document.getElementById('btn-solicitar-todos');
+        if (btnTodos) {
+            btnTodos.addEventListener('click', async () => {
+                const linhas = Array.from(tbody.querySelectorAll('tr'))
+                    .filter(tr => !tr.dataset.skuMarket);
+                if (!linhas.length) {
+                    toast('Nada para solicitar — todas as linhas já têm SKU-Market.', 'ok');
+                    return;
+                }
+                btnTodos.disabled = true;
+                const labelOriginal = btnTodos.textContent;
+                let ok = 0, falha = 0;
+                for (let i = 0; i < linhas.length; i++) {
+                    btnTodos.textContent = `Solicitando ${i + 1}/${linhas.length}...`;
+                    const r = await solicitarLinha(linhas[i], { silentToast: true });
+                    if (r.ok) ok++;
+                    else {
+                        falha++;
+                        // 429 (rate-limit): para a bateria; demais erros: continua
+                        if (r.status === 429) {
+                            toast(`Rate-limit do BDAmazon atingido. Parei em ${ok}/${linhas.length}. Aguarde 1min e clique de novo.`, 'err');
+                            break;
+                        }
+                        toast(`Linha ${i + 1} falhou: ${r.msg}`, 'err');
+                    }
+                    // Pequena pausa para não rajar o limit (60 req/min ≈ 1/s)
+                    if (i + 1 < linhas.length) await new Promise(r => setTimeout(r, 250));
+                }
+                btnTodos.textContent = labelOriginal;
+                btnTodos.disabled = false;
+                if (falha === 0) toast(`${ok} SKU-Market(s) criados com sucesso.`, 'ok');
+                else toast(`Concluído com ${ok} sucesso(s) e ${falha} falha(s).`, falha > ok ? 'err' : 'ok');
+            });
+        }
 
         // ---- inputs disparam atualização do botão "Solicitar" ----
         tbody.addEventListener('input', (e) => {
@@ -712,6 +759,28 @@
             if (tr) atualizarBotaoSolicitar(tr);
         });
 
+        function lerTextarea(id) {
+            const el = document.getElementById(id);
+            if (!el) return [];
+            return el.value.split(/\r?\n/)
+                .map(l => l.trim())
+                .filter(l => !l.startsWith('#'));
+        }
+
+        function limparTextarea(id) {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        }
+
+        function removerLinhasVazias() {
+            // Linhas onde SKU Raiz está vazio E que não têm sku_market resolvido
+            tbody.querySelectorAll('tr').forEach(tr => {
+                if (tr.dataset.skuMarket) return;
+                const sku = (tr.querySelector('[data-field="sku_raiz"]').value || '').trim();
+                if (!sku) tr.remove();
+            });
+        }
+
         document.getElementById('btn-add-linha').addEventListener('click', () => novaLinha(''));
         document.getElementById('btn-limpar-tabela').addEventListener('click', () => {
             if (!tbody.children.length) return;
@@ -720,35 +789,36 @@
             atualizarBotaoProcessar();
         });
         document.getElementById('btn-importar-lote').addEventListener('click', () => {
-            const ta = document.getElementById('manual-lote');
-            // Aceita "SKURAIZ", "SKURAIZ,ASIN", "ASIN,SKURAIZ" (auto-detecta no modo ASIN
-            // pelo padrão B0XXXXXXXX dos ASINs Amazon). Ignora linhas com '#'.
-            const linhas = ta.value.split(/\r?\n/)
-                .map(l => l.trim())
-                .filter(l => l && !l.startsWith('#'));
-            if (!linhas.length) {
-                toast('Nada para importar — cole 1 SKU Raiz por linha.', 'err');
+            // Pareia linha a linha entre os textareas (SKU Raiz, EAN, e ASIN se modo ASIN).
+            // Linhas em branco fazem parte do pareamento (mantêm a posição).
+            const skus = lerTextarea('manual-lote');
+            const eans = lerTextarea('manual-lote-ean');
+            const asins = opts.comAsin ? lerTextarea('manual-lote-asin') : [];
+            // Quem manda no total é o textarea mais longo (entre SKU e ASIN —
+            // EAN é opcional)
+            const total = Math.max(skus.length, asins.length);
+            if (!total) {
+                toast('Nada para importar — preencha pelo menos a coluna de SKU Raiz.', 'err');
                 return;
             }
-            for (const linha of linhas) {
-                if (opts.comAsin) {
-                    const partes = linha.split(/[,;\t]/).map(s => s.trim()).filter(Boolean);
-                    let asin = '', sku = '';
-                    if (partes.length >= 2) {
-                        const isAsinLike = (s) => /^B0[A-Z0-9]{8}$/i.test(s);
-                        if (isAsinLike(partes[0])) { asin = partes[0]; sku = partes[1]; }
-                        else if (isAsinLike(partes[1])) { sku = partes[0]; asin = partes[1]; }
-                        else { sku = partes[0]; asin = partes[1]; }
-                    } else {
-                        sku = partes[0];
-                    }
-                    novaLinha(sku, asin);
-                } else {
-                    novaLinha(linha);
+            // Antes de adicionar, remove linhas vazias pré-existentes da tabela
+            removerLinhasVazias();
+            let importadas = 0;
+            for (let i = 0; i < total; i++) {
+                const sku = (skus[i] || '').trim();
+                const asin = (asins[i] || '').trim();
+                if (!sku && !asin) continue; // linha em branco em ambos: ignora
+                const tr = novaLinha(sku, asin);
+                if (eans[i]) {
+                    const inp = tr.querySelector('[data-field="ean"]');
+                    if (inp) inp.value = eans[i].trim();
                 }
+                importadas++;
             }
-            ta.value = '';
-            toast(`${linhas.length} linha(s) importada(s).`, 'ok');
+            limparTextarea('manual-lote');
+            limparTextarea('manual-lote-ean');
+            if (opts.comAsin) limparTextarea('manual-lote-asin');
+            toast(`${importadas} linha(s) importada(s).`, 'ok');
         });
 
         tbody.addEventListener('click', (e) => {

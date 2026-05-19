@@ -801,9 +801,6 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
                           "Nenhuma linha válida — abortando geração da planilha.")
                 return
 
-            # Persiste lista de sku_market criados para a UI mostrar no fim
-            job.skus_market = skus_criados  # atributo dinâmico, ok
-
             # Serializa workbook sintético e roda o pipeline existente
             buffer_entrada = io.BytesIO()
             wb_sintetico.save(buffer_entrada)
