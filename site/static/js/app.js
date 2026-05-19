@@ -530,13 +530,19 @@
     }
 
     // ==========================================================
-    // SKU MANUAL (entrada por caixas de texto + API BDAmazon)
+    // ENTRADA MANUAL (caixas de texto + API BDAmazon)
+    // Compartilhado entre /sku (modo SKU) e /asin (modo ASIN com coluna extra)
     // ==========================================================
-    function initSkuManual(opts) {
-        // Toggle Planilha/Manual
-        const tabs = document.querySelectorAll('.modo-tabs__tab');
-        const cardPlanilha = document.getElementById('card-planilha');
-        const cardManual = document.getElementById('card-manual');
+    function initEntradaManual(opts) {
+        // opts: {
+        //   endpointContas, endpointCriarSku, endpointProcessar,
+        //   templateField, comAsin: bool,
+        //   tabSelector: '.modo-tabs__tab', cardPlanilhaId, cardManualId,
+        //   tbodyId, btnProcessarId,
+        // }
+        const tabs = document.querySelectorAll(opts.tabSelector || '.modo-tabs__tab');
+        const cardPlanilha = document.getElementById(opts.cardPlanilhaId || 'card-planilha');
+        const cardManual = document.getElementById(opts.cardManualId || 'card-manual');
         if (!cardPlanilha || !cardManual) return;
 
         tabs.forEach(tab => tab.addEventListener('click', () => {
@@ -550,11 +556,10 @@
             cardManual.classList.toggle('hide', modo !== 'manual');
         }));
 
-        const tbody = document.getElementById('tbl-manual-body');
+        const tbody = document.getElementById(opts.tbodyId || 'tbl-manual-body');
         const selectDefault = document.getElementById('manual-conta-default');
         const marcaDefault = document.getElementById('manual-marca-default');
-        const eanDefault = document.getElementById('manual-ean-default');
-        const btnProcessar = document.getElementById('btn-processar-manual');
+        const btnProcessar = document.getElementById(opts.btnProcessarId || 'btn-processar-manual');
         let contas = [];
 
         // Carrega contas do BDAmazon
@@ -576,41 +581,45 @@
                         `<option value="">Nenhuma conta com codigo_externo cadastrada</option>`;
                     return;
                 }
-                const opts = contas
+                const optsHtml = contas
                     .map(c => `<option value="${escape(c.codigo)}">${escape(c.nome)} (${escape(c.codigo)})</option>`)
                     .join('');
-                selectDefault.innerHTML = `<option value="">— selecione —</option>` + opts;
+                selectDefault.innerHTML = `<option value="">— selecione —</option>` + optsHtml;
             })
             .catch(e => {
-                selectDefault.innerHTML =
-                    `<option value="">Erro de rede</option>`;
+                selectDefault.innerHTML = `<option value="">Erro de rede</option>`;
                 toast('Falha ao carregar contas: ' + e, 'err');
             });
 
-        // Renderiza select de contas dentro de uma linha
         function renderSelectContas(valorSelecionado) {
-            if (!contas.length) {
-                return `<select disabled><option>—</option></select>`;
-            }
-            const opts = contas.map(c =>
+            if (!contas.length) return `<select disabled><option>—</option></select>`;
+            const optsHtml = contas.map(c =>
                 `<option value="${escape(c.codigo)}"${c.codigo === valorSelecionado ? ' selected' : ''}>${escape(c.nome)} (${escape(c.codigo)})</option>`
             ).join('');
-            return `<select data-field="conta_codigo"><option value="">— selecione —</option>${opts}</select>`;
+            return `<select data-field="conta_codigo"><option value="">— selecione —</option>${optsHtml}</select>`;
         }
 
-        function novaLinha(skuRaiz) {
+        function novaLinha(skuRaiz, asin) {
             const tr = document.createElement('tr');
             const contaSel = selectDefault.value;
+            const colAsin = opts.comAsin
+                ? `<td><input data-field="asin" type="text" value="${escape(asin || '')}" placeholder="Ex.: B0XXXXXXXX"></td>`
+                : '';
             tr.innerHTML = `
                 <td class="manual-num"></td>
+                ${colAsin}
                 <td><input data-field="sku_raiz" type="text" value="${escape(skuRaiz || '')}" placeholder="Ex.: ABC123"></td>
                 <td>${renderSelectContas(contaSel)}</td>
                 <td><input data-field="marca" type="text" value="${escape(marcaDefault.value || '')}"></td>
-                <td><input data-field="ean" type="text" value="${escape(eanDefault.value || '')}"></td>
+                <td><input data-field="ean" type="text" placeholder="Por linha"></td>
+                <td class="cell-sku-market">
+                    <button type="button" class="btn btn--xs btn--dark" data-role="solicitar-sku-market" disabled>Solicitar</button>
+                </td>
                 <td><button type="button" class="tbl-manual__del" data-role="del-linha" title="Remover">✕</button></td>
             `;
             tbody.appendChild(tr);
             atualizarNumeracao();
+            atualizarBotaoSolicitar(tr);
             atualizarBotaoProcessar();
             return tr;
         }
@@ -622,14 +631,86 @@
             });
         }
 
-        function atualizarBotaoProcessar() {
-            const linhas = tbody.querySelectorAll('tr').length;
-            const temTemplate = !!dropzoneFiles[opts.templateField];
-            btnProcessar.disabled = !(linhas > 0 && temTemplate);
-            btnProcessar.title = btnProcessar.disabled
-                ? 'Adicione pelo menos uma linha e envie o template .xlsm'
+        function atualizarBotaoSolicitar(tr) {
+            const btn = tr.querySelector('[data-role="solicitar-sku-market"]');
+            if (!btn) return; // já resolvida
+            const sku = (tr.querySelector('[data-field="sku_raiz"]').value || '').trim();
+            const conta = (tr.querySelector('[data-field="conta_codigo"]').value || '').trim();
+            const asinOk = !opts.comAsin || (tr.querySelector('[data-field="asin"]').value || '').trim();
+            btn.disabled = !(sku && conta && asinOk);
+            btn.title = btn.disabled
+                ? (opts.comAsin
+                    ? 'Preencha ASIN, SKU Raiz e Conta primeiro'
+                    : 'Preencha SKU Raiz e Conta primeiro')
                 : '';
         }
+
+        function atualizarBotaoProcessar() {
+            const linhas = Array.from(tbody.querySelectorAll('tr'));
+            const temTemplate = !!dropzoneFiles[opts.templateField];
+            const todasResolvidas = linhas.length > 0 &&
+                linhas.every(tr => tr.dataset.skuMarket);
+            btnProcessar.disabled = !(temTemplate && todasResolvidas);
+            if (!temTemplate) btnProcessar.title = 'Envie o template .xlsm';
+            else if (!todasResolvidas) btnProcessar.title = 'Solicite o SKU-Market de todas as linhas primeiro';
+            else btnProcessar.title = '';
+        }
+
+        // ---- clique em "Solicitar SKU-Market" ----
+        tbody.addEventListener('click', async (e) => {
+            const btn = e.target.closest('[data-role="solicitar-sku-market"]');
+            if (!btn) return;
+            const tr = btn.closest('tr');
+            const sku = (tr.querySelector('[data-field="sku_raiz"]').value || '').trim();
+            const conta = (tr.querySelector('[data-field="conta_codigo"]').value || '').trim();
+            const asin = opts.comAsin
+                ? (tr.querySelector('[data-field="asin"]').value || '').trim()
+                : '';
+            btn.disabled = true;
+            btn.textContent = '...';
+            try {
+                const r = await fetch(opts.endpointCriarSku, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+                    body: JSON.stringify({ sku_raiz: sku, conta_codigo: conta, asin }),
+                });
+                const data = await r.json();
+                if (!r.ok || !data.sucesso) {
+                    const det = data.detalhe ? ` (${data.detalhe})` : '';
+                    toast((data.mensagem || 'Falha BDAmazon') + det, 'err');
+                    btn.disabled = false;
+                    btn.textContent = 'Solicitar';
+                    return;
+                }
+                tr.dataset.skuMarket = data.sku_market;
+                tr.dataset.versao = String(data.versao || 1);
+                const cell = tr.querySelector('.cell-sku-market');
+                cell.innerHTML = `
+                    <code style="font-size:12px">${escape(data.sku_market)}</code>
+                    <small style="color:var(--text-muted);display:block">v${escape(String(data.versao))}</small>
+                `;
+                // Trava os campos da linha resolvidos (sku_raiz, conta, asin)
+                tr.querySelector('[data-field="sku_raiz"]').readOnly = true;
+                tr.querySelector('[data-field="conta_codigo"]').disabled = true;
+                if (opts.comAsin) tr.querySelector('[data-field="asin"]').readOnly = true;
+                toast(`SKU-Market criado: ${data.sku_market}`, 'ok');
+                atualizarBotaoProcessar();
+            } catch (err) {
+                toast('Erro de rede: ' + err, 'err');
+                btn.disabled = false;
+                btn.textContent = 'Solicitar';
+            }
+        });
+
+        // ---- inputs disparam atualização do botão "Solicitar" ----
+        tbody.addEventListener('input', (e) => {
+            const tr = e.target.closest('tr');
+            if (tr) atualizarBotaoSolicitar(tr);
+        });
+        tbody.addEventListener('change', (e) => {
+            const tr = e.target.closest('tr');
+            if (tr) atualizarBotaoSolicitar(tr);
+        });
 
         document.getElementById('btn-add-linha').addEventListener('click', () => novaLinha(''));
         document.getElementById('btn-limpar-tabela').addEventListener('click', () => {
@@ -640,14 +721,32 @@
         });
         document.getElementById('btn-importar-lote').addEventListener('click', () => {
             const ta = document.getElementById('manual-lote');
+            // Aceita "SKURAIZ", "SKURAIZ,ASIN", "ASIN,SKURAIZ" (auto-detecta no modo ASIN
+            // pelo padrão B0XXXXXXXX dos ASINs Amazon). Ignora linhas com '#'.
             const linhas = ta.value.split(/\r?\n/)
                 .map(l => l.trim())
                 .filter(l => l && !l.startsWith('#'));
             if (!linhas.length) {
-                toast('Nada para importar — cole SKUs Raiz no campo (1 por linha).', 'err');
+                toast('Nada para importar — cole 1 SKU Raiz por linha.', 'err');
                 return;
             }
-            linhas.forEach(sku => novaLinha(sku));
+            for (const linha of linhas) {
+                if (opts.comAsin) {
+                    const partes = linha.split(/[,;\t]/).map(s => s.trim()).filter(Boolean);
+                    let asin = '', sku = '';
+                    if (partes.length >= 2) {
+                        const isAsinLike = (s) => /^B0[A-Z0-9]{8}$/i.test(s);
+                        if (isAsinLike(partes[0])) { asin = partes[0]; sku = partes[1]; }
+                        else if (isAsinLike(partes[1])) { sku = partes[0]; asin = partes[1]; }
+                        else { sku = partes[0]; asin = partes[1]; }
+                    } else {
+                        sku = partes[0];
+                    }
+                    novaLinha(sku, asin);
+                } else {
+                    novaLinha(linha);
+                }
+            }
             ta.value = '';
             toast(`${linhas.length} linha(s) importada(s).`, 'ok');
         });
@@ -660,39 +759,32 @@
             atualizarBotaoProcessar();
         });
 
-        // Quando o dropzone do template muda, reflete no botão. O setupDropzone já chama
-        // updateProcessButton (do modo planilha) — observamos também via mutationobserver
-        // no input do dropzone. Pra simplificar: hook no change do input.
         document.querySelectorAll(`[data-field="${opts.templateField}"] input[data-role="dropzone-input"]`)
             .forEach(inp => inp.addEventListener('change', atualizarBotaoProcessar));
-        // Também quando o clear é clicado
         document.querySelectorAll(`[data-field="${opts.templateField}"] [data-role="dropzone-clear"]`)
             .forEach(b => b.addEventListener('click', () => setTimeout(atualizarBotaoProcessar, 0)));
 
         btnProcessar.addEventListener('click', () => {
-            // Monta payload
             const linhas = Array.from(tbody.querySelectorAll('tr'));
             const entradas = [];
             for (const tr of linhas) {
-                const sku = (tr.querySelector('[data-field="sku_raiz"]').value || '').trim();
-                const conta = (tr.querySelector('[data-field="conta_codigo"]').value || '').trim();
-                const marca = (tr.querySelector('[data-field="marca"]').value || '').trim();
-                const ean = (tr.querySelector('[data-field="ean"]').value || '').trim();
-                if (!sku || !conta) {
-                    toast(`Linha ${entradas.length + 1}: SKU Raiz e Conta são obrigatórios.`, 'err');
+                if (!tr.dataset.skuMarket) {
+                    toast('Solicite o SKU-Market de todas as linhas antes.', 'err');
                     return;
                 }
-                entradas.push({ sku_raiz: sku, conta_codigo: conta, marca, ean });
-            }
-            if (!entradas.length) {
-                toast('Adicione pelo menos uma linha.', 'err');
-                return;
+                const e = {
+                    sku_raiz: (tr.querySelector('[data-field="sku_raiz"]').value || '').trim(),
+                    conta_codigo: (tr.querySelector('[data-field="conta_codigo"]').value || '').trim(),
+                    marca: (tr.querySelector('[data-field="marca"]').value || '').trim(),
+                    ean: (tr.querySelector('[data-field="ean"]').value || '').trim(),
+                    sku_market: tr.dataset.skuMarket,
+                    versao: parseInt(tr.dataset.versao || '1', 10),
+                };
+                if (opts.comAsin) e.asin = (tr.querySelector('[data-field="asin"]').value || '').trim();
+                entradas.push(e);
             }
             const template = dropzoneFiles[opts.templateField];
-            if (!template) {
-                toast('Envie o template .xlsm primeiro.', 'err');
-                return;
-            }
+            if (!template) { toast('Envie o template .xlsm primeiro.', 'err'); return; }
 
             const fd = new FormData();
             fd.append('entradas', JSON.stringify(entradas));
@@ -709,9 +801,9 @@
             consoleEl.innerHTML = '';
             progressBar.style.width = '0%';
             resultHost.innerHTML = '';
-            statusEl.textContent = `Criando ${entradas.length} SKU(s) no BDAmazon...`;
+            statusEl.textContent = `Gerando planilha para ${entradas.length} item(ns)...`;
             badge.className = 'badge badge--info';
-            badge.textContent = 'criando';
+            badge.textContent = 'processando';
             btnProcessar.disabled = true;
 
             fetch(opts.endpointProcessar, {
@@ -721,9 +813,7 @@
             })
                 .then(r => r.json())
                 .then(data => {
-                    if (data && data.sucesso === false) {
-                        throw new Error(data.mensagem || 'Falha na rota');
-                    }
+                    if (data && data.sucesso === false) throw new Error(data.mensagem || 'Falha na rota');
                     if (!data.job_id) throw new Error('Resposta sem job_id');
                     streamLogs(data.job_id);
                 })
@@ -736,8 +826,20 @@
                 });
         });
 
-        // Inicia com uma linha vazia pra orientar o uso
+        // Inicia com uma linha vazia
         novaLinha('');
+    }
+    window.initEntradaManual = initEntradaManual;
+
+    // Alias de compatibilidade (modo SKU)
+    function initSkuManual(opts) {
+        return initEntradaManual({
+            endpointContas: opts.endpointContas,
+            endpointCriarSku: opts.endpointCriarSku,
+            endpointProcessar: opts.endpointProcessar,
+            templateField: opts.templateField,
+            comAsin: false,
+        });
     }
     window.initSkuManual = initSkuManual;
 

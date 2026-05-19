@@ -106,8 +106,8 @@
     </div>
 
     <div class="card__body">
-        <!-- Defaults (aplicados ao colar lote) -->
-        <div class="grid grid--3">
+        <!-- Defaults (aplicados ao colar lote / + nova linha) -->
+        <div class="grid grid--2">
             <div class="field">
                 <label class="label" for="manual-conta-default">Conta (padrão p/ novas linhas)</label>
                 <select id="manual-conta-default" class="select">
@@ -117,10 +117,6 @@
             <div class="field">
                 <label class="label" for="manual-marca-default">Marca da empresa <span class="label__hint">aplicada a novas linhas</span></label>
                 <input id="manual-marca-default" type="text" class="select" placeholder="Ex.: Genérico" value="Genérico">
-            </div>
-            <div class="field">
-                <label class="label" for="manual-ean-default">EAN da empresa <span class="label__hint">aplicada a novas linhas</span></label>
-                <input id="manual-ean-default" type="text" class="select" placeholder="Opcional">
             </div>
         </div>
 
@@ -146,11 +142,12 @@
         <table class="tbl-manual" id="tbl-manual">
             <thead>
                 <tr>
-                    <th style="width:80px">#</th>
+                    <th style="width:48px">#</th>
                     <th>SKU Raiz</th>
-                    <th style="width:25%">Conta</th>
+                    <th style="width:22%">Conta</th>
                     <th>Marca</th>
-                    <th>EAN</th>
+                    <th>EAN da empresa</th>
+                    <th style="width:18%">SKU Market</th>
                     <th style="width:48px"></th>
                 </tr>
             </thead>
@@ -163,8 +160,11 @@
     <div class="card__footer">
         <button id="btn-processar-manual" class="btn btn--primary" disabled>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            Criar SKUs e gerar planilha
+            Gerar planilha Amazon
         </button>
+        <span class="card__sub" style="margin-left:12px">
+            Clique em <strong>Solicitar SKU-Market</strong> em cada linha primeiro.
+        </span>
     </div>
 </div>
 
@@ -196,6 +196,7 @@
     });
     initSkuManual({
         endpointContas: "{{ url_for('api_bdamazon_contas') }}",
+        endpointCriarSku: "{{ url_for('api_bdamazon_criar_sku') }}",
         endpointProcessar: "{{ url_for('api_processar_sku_manual') }}",
         templateField: "template-manual",
     });

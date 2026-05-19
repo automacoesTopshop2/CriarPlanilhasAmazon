@@ -644,21 +644,100 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
             ],
         })
 
+    # --------------------------- API: criar 1 SKU no BDAmazon -------------------
+    @app.route("/api/bdamazon/criar-sku", methods=["POST"])
+    @login_required
+    def api_bdamazon_criar_sku():
+        """Cria 1 SKU no BDAmazon e devolve o sku_market.
+        Usado pelo botão 'Solicitar SKU-Market' de cada linha — separa a
+        criação no BDAmazon da geração da planilha Amazon."""
+        if not (os.getenv("BDAMAZON_API_KEY") or "").strip():
+            return jsonify({
+                "sucesso": False,
+                "mensagem": "BDAMAZON_API_KEY não configurada no servidor.",
+                "detalhe": "env var BDAMAZON_API_KEY ausente",
+            }), 503
+        if not current_user.codigo_externo:
+            return jsonify({
+                "sucesso": False,
+                "mensagem": (
+                    "Seu usuário não tem 'codigo_externo' definido. "
+                    "Peça ao admin para cadastrar em /admin/usuarios."
+                ),
+            }), 400
+        data = request.get_json(silent=True) or {}
+        sku_raiz = (data.get("sku_raiz") or "").strip()
+        conta = (data.get("conta_codigo") or "").strip()
+        asin = (data.get("asin") or "").strip() or None
+        if not sku_raiz or not conta:
+            return jsonify({"sucesso": False,
+                            "mensagem": "sku_raiz e conta_codigo são obrigatórios."}), 400
+        try:
+            criado = bdamazon_client.criar_sku(
+                conta_codigo=conta,
+                sku_raiz=sku_raiz,
+                usuario_codigo=current_user.codigo_externo,
+                asin=asin,
+            )
+        except bdamazon_client.BDAmazonAuthError as e:
+            return jsonify({"sucesso": False,
+                            "mensagem": "BDAmazon recusou a autenticação.",
+                            "detalhe": str(e)}), 502
+        except bdamazon_client.BDAmazonNotFoundError as e:
+            return jsonify({"sucesso": False,
+                            "mensagem": "Conta ou usuário desconhecido no BDAmazon.",
+                            "detalhe": str(e)}), 404
+        except bdamazon_client.BDAmazonRateLimitError as e:
+            return jsonify({"sucesso": False,
+                            "mensagem": "Rate-limit do BDAmazon (60 req/min). Aguarde alguns segundos.",
+                            "detalhe": str(e)}), 429
+        except bdamazon_client.BDAmazonError as e:
+            app.logger.error("Falha no BDAmazon /skus: %s", e)
+            return jsonify({"sucesso": False,
+                            "mensagem": "Falha ao criar SKU no BDAmazon.",
+                            "detalhe": str(e)}), 502
+        return jsonify({
+            "sucesso": True,
+            "sku_market": criado.sku_market,
+            "sku_raiz": criado.sku_raiz,
+            "versao": criado.versao,
+            "conta_codigo": criado.conta_codigo,
+            "conta_nome": criado.conta_nome,
+            "criado_em": criado.criado_em,
+        })
+
     # --------------------------- API: SKU manual via API BDAmazon ---------------
     def _executar_em_thread_sku_manual(job, processador, entradas, usuario_codigo,
-                                       arquivo_template):
-        """Loop: chama BDAmazon API por entrada, monta xlsx sintético, depois
-        delega ao ProcessadorSKU usual."""
+                                       arquivo_template, *, modo_asin=False):
+        """Loop: para cada entrada, garante que tenha sku_market (chamando a API
+        BDAmazon se ainda não tiver). Depois monta xlsx sintético e delega ao
+        ProcessadorSKU ou ProcessadorASIN.
+
+        modo_asin=False -> entrada {sku_raiz, conta_codigo, marca, ean, sku_market?}
+                           xlsx sintético tem colunas [SKU, MARCA, EAN]
+        modo_asin=True  -> entrada {sku_raiz, conta_codigo, asin, marca, ean, sku_market?}
+                           xlsx sintético tem colunas [ASIN, SKU]
+        """
         try:
             job.status = "running"
-            _push_log(job, "info",
-                      f"Criando {len(entradas)} SKU(s) no BDAmazon...")
+            pendentes = sum(1 for e in entradas if not e.get("sku_market"))
+            if pendentes:
+                _push_log(job, "info",
+                          f"Criando {pendentes} SKU(s) ainda pendentes no BDAmazon...")
+            else:
+                _push_log(job, "info",
+                          f"Todas as {len(entradas)} linha(s) já têm sku_market. "
+                          f"Pulando criação no BDAmazon e gerando planilha direto.")
 
             import openpyxl
             wb_sintetico = openpyxl.Workbook()
             ws = wb_sintetico.active
-            ws.title = "SKUs"
-            ws.append(["SKU", "MARCA", "EAN"])
+            if modo_asin:
+                ws.title = "ASINs"
+                ws.append(["ASIN", "SKU"])
+            else:
+                ws.title = "SKUs"
+                ws.append(["SKU", "MARCA", "EAN"])
 
             skus_criados = []
             for indice, entrada in enumerate(entradas):
@@ -666,39 +745,60 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
                 conta = (entrada.get("conta_codigo") or "").strip()
                 marca = (entrada.get("marca") or "").strip() or "Genérico"
                 ean = (entrada.get("ean") or "").strip()
+                asin = (entrada.get("asin") or "").strip()
+                sku_market_pre = (entrada.get("sku_market") or "").strip()
                 if not sku_raiz or not conta:
                     _push_log(job, "log",
                               f"[ERRO] linha {indice + 1}: sku_raiz e conta são obrigatórios",
                               nivel="Erro")
                     continue
-                try:
-                    criado = bdamazon_client.criar_sku(
-                        conta_codigo=conta,
-                        sku_raiz=sku_raiz,
-                        usuario_codigo=usuario_codigo,
-                    )
-                except bdamazon_client.BDAmazonError as e:
+                if modo_asin and not asin:
                     _push_log(job, "log",
-                              f"[ERRO] {sku_raiz} ({conta}): {e}",
+                              f"[ERRO] linha {indice + 1}: asin é obrigatório no modo ASIN",
                               nivel="Erro")
                     continue
+                if sku_market_pre:
+                    sku_market = sku_market_pre
+                    versao = entrada.get("versao") or 1
+                    _push_log(job, "log",
+                              f"[OK] {sku_raiz} -> {sku_market} (já criado anteriormente)",
+                              nivel="Info")
+                else:
+                    try:
+                        criado = bdamazon_client.criar_sku(
+                            conta_codigo=conta,
+                            sku_raiz=sku_raiz,
+                            usuario_codigo=usuario_codigo,
+                            asin=asin or None,
+                        )
+                    except bdamazon_client.BDAmazonError as e:
+                        _push_log(job, "log",
+                                  f"[ERRO] {sku_raiz} ({conta}): {e}",
+                                  nivel="Erro")
+                        continue
+                    sku_market = criado.sku_market
+                    versao = criado.versao
+                    _push_log(job, "log",
+                              f"[OK] {sku_raiz} -> {sku_market} (v{versao})",
+                              nivel="Info")
                 skus_criados.append({
-                    "sku_market": criado.sku_market,
+                    "sku_market": sku_market,
                     "sku_raiz": sku_raiz,
                     "conta_codigo": conta,
-                    "versao": criado.versao,
+                    "versao": versao,
                     "marca": marca,
                     "ean": ean,
+                    "asin": asin,
                 })
-                ws.append([criado.sku_market, marca, ean])
-                _push_log(job, "log",
-                          f"[OK] {sku_raiz} -> {criado.sku_market} (v{criado.versao})",
-                          nivel="Info")
+                if modo_asin:
+                    ws.append([asin, sku_market])
+                else:
+                    ws.append([sku_market, marca, ean])
 
             if not skus_criados:
                 job.status = "error"
                 _push_log(job, "error",
-                          "Nenhum SKU foi criado no BDAmazon — abortando geração da planilha.")
+                          "Nenhuma linha válida — abortando geração da planilha.")
                 return
 
             # Persiste lista de sku_market criados para a UI mostrar no fim
@@ -710,7 +810,7 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
             buffer_entrada.seek(0)
 
             _push_log(job, "status",
-                      f"{len(skus_criados)} SKU(s) criados. Gerando planilha Amazon...")
+                      f"{len(skus_criados)} linha(s) prontas. Gerando planilha Amazon...")
 
             def cb_status(msg):
                 job.mensagem = msg
@@ -754,55 +854,70 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
         finally:
             job.log_queue.put({"tipo": "end"})
 
-    @app.route("/api/processar/sku-manual", methods=["POST"])
-    @login_required
-    def api_processar_sku_manual():
-        """Recebe entradas digitadas (lista JSON) + template .xlsm.
-        Para cada entrada chama POST /api/v1/skus do BDAmazon e usa o
-        sku_market retornado como SKU da planilha Amazon."""
-        cfg_atual = app.config.get("APP_CONFIG", config)
-
+    def _processar_manual_compartilhado(processador, modo_asin: bool):
+        """Lógica comum a /api/processar/sku-manual e /asin-manual.
+        Devolve (status, json_response)."""
         if not current_user.codigo_externo:
-            return jsonify({
+            return 400, {
                 "sucesso": False,
                 "mensagem": (
                     "Seu usuário não tem 'codigo_externo' definido. "
                     "Peça ao admin pra cadastrar o seu código do BDAmazon "
                     "em /admin/usuarios."
                 ),
-            }), 400
-
+            }
         entradas_raw = request.form.get("entradas")
         if not entradas_raw:
-            return jsonify({"sucesso": False,
-                            "mensagem": "Campo 'entradas' ausente."}), 400
+            return 400, {"sucesso": False, "mensagem": "Campo 'entradas' ausente."}
         try:
             entradas = json.loads(entradas_raw)
         except ValueError:
-            return jsonify({"sucesso": False,
-                            "mensagem": "Campo 'entradas' não é JSON válido."}), 400
+            return 400, {"sucesso": False,
+                         "mensagem": "Campo 'entradas' não é JSON válido."}
         if not isinstance(entradas, list) or not entradas:
-            return jsonify({"sucesso": False,
-                            "mensagem": "'entradas' precisa ser lista não-vazia."}), 400
-
+            return 400, {"sucesso": False,
+                         "mensagem": "'entradas' precisa ser lista não-vazia."}
         arquivo_template = request.files.get("arquivo_template")
         if not arquivo_template:
-            return jsonify({"sucesso": False,
-                            "mensagem": "arquivo_template é obrigatório."}), 400
+            return 400, {"sucesso": False,
+                         "mensagem": "arquivo_template é obrigatório."}
         bytes_template = arquivo_template.read()
 
-        job = Job("sku-manual", owner_id=current_user.id)
+        job = Job("asin-manual" if modo_asin else "sku-manual",
+                  owner_id=current_user.id)
         with JOBS_LOCK:
             JOBS[job.id] = job
         _limpar_jobs_antigos()
-
         threading.Thread(
             target=_executar_em_thread_sku_manual,
-            args=(job, ProcessadorSKU(cfg_atual), entradas,
+            args=(job, processador, entradas,
                   current_user.codigo_externo, bytes_template),
+            kwargs={"modo_asin": modo_asin},
             daemon=True,
         ).start()
-        return jsonify({"job_id": job.id})
+        return 200, {"job_id": job.id}
+
+    @app.route("/api/processar/asin-manual", methods=["POST"])
+    @login_required
+    def api_processar_asin_manual():
+        cfg_atual = app.config.get("APP_CONFIG", config)
+        status, body = _processar_manual_compartilhado(
+            ProcessadorASIN(cfg_atual), modo_asin=True
+        )
+        return jsonify(body), status
+
+    @app.route("/api/processar/sku-manual", methods=["POST"])
+    @login_required
+    def api_processar_sku_manual():
+        """Recebe entradas digitadas (lista JSON) + template .xlsm.
+        Para cada entrada: se já vier com sku_market resolvido, usa direto;
+        senão chama POST /api/v1/skus do BDAmazon. Depois gera planilha Amazon
+        via ProcessadorSKU."""
+        cfg_atual = app.config.get("APP_CONFIG", config)
+        status, body = _processar_manual_compartilhado(
+            ProcessadorSKU(cfg_atual), modo_asin=False
+        )
+        return jsonify(body), status
 
     @app.route("/api/processar/sku", methods=["POST"])
     @login_required
