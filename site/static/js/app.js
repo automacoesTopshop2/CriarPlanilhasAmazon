@@ -536,10 +536,14 @@
     function initEntradaManual(opts) {
         // opts: {
         //   endpointContas, endpointCriarSku, endpointProcessar,
-        //   templateField, comAsin: bool,
+        //   templateField,
+        //   comAsin: bool (default false),
+        //   comMarcaEan: bool (default true) — desligar para /asin, onde o
+        //                processador só usa ASIN+SKU,
         //   tabSelector: '.modo-tabs__tab', cardPlanilhaId, cardManualId,
         //   tbodyId, btnProcessarId,
         // }
+        if (opts.comMarcaEan === undefined) opts.comMarcaEan = true;
         const tabs = document.querySelectorAll(opts.tabSelector || '.modo-tabs__tab');
         const cardPlanilha = document.getElementById(opts.cardPlanilhaId || 'card-planilha');
         const cardManual = document.getElementById(opts.cardManualId || 'card-manual');
@@ -558,9 +562,10 @@
 
         const tbody = document.getElementById(opts.tbodyId || 'tbl-manual-body');
         const selectDefault = document.getElementById('manual-conta-default');
-        const marcaDefault = document.getElementById('manual-marca-default');
+        const marcaDefault = document.getElementById('manual-marca-default'); // pode não existir (modo ASIN)
         const btnProcessar = document.getElementById(opts.btnProcessarId || 'btn-processar-manual');
         let contas = [];
+        const marcaDefaultValor = () => (marcaDefault && marcaDefault.value) || '';
 
         // Carrega contas do BDAmazon
         fetch(opts.endpointContas)
@@ -605,13 +610,16 @@
             const colAsin = opts.comAsin
                 ? `<td><input data-field="asin" type="text" value="${escape(asin || '')}" placeholder="Ex.: B0XXXXXXXX"></td>`
                 : '';
+            const colsMarcaEan = opts.comMarcaEan
+                ? `<td><input data-field="marca" type="text" value="${escape(marcaDefaultValor())}"></td>
+                   <td><input data-field="ean" type="text" placeholder="Por linha"></td>`
+                : '';
             tr.innerHTML = `
                 <td class="manual-num"></td>
                 ${colAsin}
                 <td><input data-field="sku_raiz" type="text" value="${escape(skuRaiz || '')}" placeholder="Ex.: ABC123"></td>
                 <td>${renderSelectContas(contaSel)}</td>
-                <td><input data-field="marca" type="text" value="${escape(marcaDefault.value || '')}"></td>
-                <td><input data-field="ean" type="text" placeholder="Por linha"></td>
+                ${colsMarcaEan}
                 <td class="cell-sku-market">
                     <button type="button" class="btn btn--xs btn--dark" data-role="solicitar-sku-market" disabled>Solicitar</button>
                 </td>
@@ -789,34 +797,31 @@
             atualizarBotaoProcessar();
         });
         document.getElementById('btn-importar-lote').addEventListener('click', () => {
-            // Pareia linha a linha entre os textareas (SKU Raiz, EAN, e ASIN se modo ASIN).
-            // Linhas em branco fazem parte do pareamento (mantêm a posição).
+            // Pareia linha a linha entre os textareas. SKU Raiz é sempre presente;
+            // EAN só existe quando comMarcaEan; ASIN só quando comAsin.
             const skus = lerTextarea('manual-lote');
-            const eans = lerTextarea('manual-lote-ean');
+            const eans = opts.comMarcaEan ? lerTextarea('manual-lote-ean') : [];
             const asins = opts.comAsin ? lerTextarea('manual-lote-asin') : [];
-            // Quem manda no total é o textarea mais longo (entre SKU e ASIN —
-            // EAN é opcional)
             const total = Math.max(skus.length, asins.length);
             if (!total) {
                 toast('Nada para importar — preencha pelo menos a coluna de SKU Raiz.', 'err');
                 return;
             }
-            // Antes de adicionar, remove linhas vazias pré-existentes da tabela
             removerLinhasVazias();
             let importadas = 0;
             for (let i = 0; i < total; i++) {
                 const sku = (skus[i] || '').trim();
                 const asin = (asins[i] || '').trim();
-                if (!sku && !asin) continue; // linha em branco em ambos: ignora
+                if (!sku && !asin) continue;
                 const tr = novaLinha(sku, asin);
-                if (eans[i]) {
+                if (opts.comMarcaEan && eans[i]) {
                     const inp = tr.querySelector('[data-field="ean"]');
                     if (inp) inp.value = eans[i].trim();
                 }
                 importadas++;
             }
             limparTextarea('manual-lote');
-            limparTextarea('manual-lote-ean');
+            if (opts.comMarcaEan) limparTextarea('manual-lote-ean');
             if (opts.comAsin) limparTextarea('manual-lote-asin');
             toast(`${importadas} linha(s) importada(s).`, 'ok');
         });
@@ -845,11 +850,15 @@
                 const e = {
                     sku_raiz: (tr.querySelector('[data-field="sku_raiz"]').value || '').trim(),
                     conta_codigo: (tr.querySelector('[data-field="conta_codigo"]').value || '').trim(),
-                    marca: (tr.querySelector('[data-field="marca"]').value || '').trim(),
-                    ean: (tr.querySelector('[data-field="ean"]').value || '').trim(),
                     sku_market: tr.dataset.skuMarket,
                     versao: parseInt(tr.dataset.versao || '1', 10),
                 };
+                if (opts.comMarcaEan) {
+                    const elMarca = tr.querySelector('[data-field="marca"]');
+                    const elEan = tr.querySelector('[data-field="ean"]');
+                    e.marca = (elMarca && elMarca.value || '').trim();
+                    e.ean = (elEan && elEan.value || '').trim();
+                }
                 if (opts.comAsin) e.asin = (tr.querySelector('[data-field="asin"]').value || '').trim();
                 entradas.push(e);
             }

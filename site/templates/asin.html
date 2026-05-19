@@ -77,20 +77,14 @@
     </div>
 
     <div class="card__body">
-        <div class="grid grid--2">
-            <div class="field">
-                <label class="label" for="manual-conta-default">Conta (padrão p/ novas linhas)</label>
-                <select id="manual-conta-default" class="select">
-                    <option value="">— carregando contas… —</option>
-                </select>
-            </div>
-            <div class="field">
-                <label class="label" for="manual-marca-default">Marca da empresa <span class="label__hint">padrão p/ novas linhas</span></label>
-                <input id="manual-marca-default" type="text" class="select" placeholder="Ex.: Genérico" value="Genérico">
-            </div>
+        <div class="field">
+            <label class="label" for="manual-conta-default">Conta (padrão p/ novas linhas)</label>
+            <select id="manual-conta-default" class="select">
+                <option value="">— carregando contas… —</option>
+            </select>
         </div>
 
-        <div class="grid grid--4 mt-6">
+        <div class="grid grid--3 mt-6">
             <div class="field">
                 <label class="label" for="manual-lote-asin">ASIN (1 por linha)</label>
                 <textarea id="manual-lote-asin" rows="6" class="select" placeholder="B08XXXXXXX&#10;B09YYYYYYY&#10;..."></textarea>
@@ -98,10 +92,6 @@
             <div class="field">
                 <label class="label" for="manual-lote">SKU Raiz (1 por linha, mesma ordem)</label>
                 <textarea id="manual-lote" rows="6" class="select" placeholder="ABC123&#10;XYZ987&#10;..."></textarea>
-            </div>
-            <div class="field">
-                <label class="label" for="manual-lote-ean">EAN da empresa (1 por linha, mesma ordem)</label>
-                <textarea id="manual-lote-ean" rows="6" class="select" placeholder="7891234567890&#10;7899876543210&#10;..."></textarea>
             </div>
             <div class="field">
                 <label class="label">Template ListaASINS (.xlsm)</label>
@@ -123,12 +113,10 @@
             <thead>
                 <tr>
                     <th style="width:48px">#</th>
-                    <th style="width:14%">ASIN</th>
+                    <th>ASIN</th>
                     <th>SKU Raiz</th>
-                    <th style="width:20%">Conta</th>
-                    <th>Marca</th>
-                    <th>EAN da empresa</th>
-                    <th style="width:16%">SKU Market</th>
+                    <th style="width:28%">Conta</th>
+                    <th style="width:20%">SKU Market</th>
                     <th style="width:48px"></th>
                 </tr>
             </thead>
@@ -180,6 +168,7 @@
         endpointProcessar: "{{ url_for('api_processar_asin_manual') }}",
         templateField: "template-manual",
         comAsin: true,
+        comMarcaEan: false,
     });
 </script>
 {% endblock %}
