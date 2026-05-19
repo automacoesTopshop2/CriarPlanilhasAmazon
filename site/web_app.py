@@ -46,6 +46,7 @@ from core.config import Configuracoes
 from core.config_manager import GerenciadorConfig
 from core.processadores import ProcessadorSKU, ProcessadorASIN, ProcessadorLimpeza
 from core.utils import Utilitarios
+from core import bdamazon_client
 
 from auth import (
     db, Usuario, auth_bp, admin_bp, config_bp, registrar_evento,
@@ -597,6 +598,200 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
             daemon=True,
         ).start()
         return job
+
+    # --------------------------- API: BDAmazon proxy ---------------------------
+    @app.route("/api/bdamazon/contas")
+    @login_required
+    def api_bdamazon_contas():
+        """Proxy autenticado para GET /api/v1/contas do BDAmazon.
+        Devolve a lista pra UI popular o <select> do formulário manual."""
+        try:
+            contas = bdamazon_client.listar_contas()
+        except bdamazon_client.BDAmazonAuthError as e:
+            return jsonify({
+                "sucesso": False,
+                "mensagem": "BDAmazon recusou a autenticação. Verifique a BDAMAZON_API_KEY.",
+                "detalhe": str(e),
+            }), 502
+        except bdamazon_client.BDAmazonError as e:
+            return jsonify({
+                "sucesso": False,
+                "mensagem": "Não consegui falar com o BDAmazon.",
+                "detalhe": str(e),
+            }), 502
+        return jsonify({
+            "sucesso": True,
+            "contas": [
+                {
+                    "codigo": c.codigo,
+                    "nome": c.nome,
+                    "marca": c.marca,
+                    "tipo_canal": c.tipo_canal,
+                    "prefixo_sku": c.prefixo_sku,
+                }
+                for c in contas
+            ],
+        })
+
+    # --------------------------- API: SKU manual via API BDAmazon ---------------
+    def _executar_em_thread_sku_manual(job, processador, entradas, usuario_codigo,
+                                       arquivo_template):
+        """Loop: chama BDAmazon API por entrada, monta xlsx sintético, depois
+        delega ao ProcessadorSKU usual."""
+        try:
+            job.status = "running"
+            _push_log(job, "info",
+                      f"Criando {len(entradas)} SKU(s) no BDAmazon...")
+
+            import openpyxl
+            wb_sintetico = openpyxl.Workbook()
+            ws = wb_sintetico.active
+            ws.title = "SKUs"
+            ws.append(["SKU", "MARCA", "EAN"])
+
+            skus_criados = []
+            for indice, entrada in enumerate(entradas):
+                sku_raiz = (entrada.get("sku_raiz") or "").strip()
+                conta = (entrada.get("conta_codigo") or "").strip()
+                marca = (entrada.get("marca") or "").strip() or "Genérico"
+                ean = (entrada.get("ean") or "").strip()
+                if not sku_raiz or not conta:
+                    _push_log(job, "log",
+                              f"[ERRO] linha {indice + 1}: sku_raiz e conta são obrigatórios",
+                              nivel="Erro")
+                    continue
+                try:
+                    criado = bdamazon_client.criar_sku(
+                        conta_codigo=conta,
+                        sku_raiz=sku_raiz,
+                        usuario_codigo=usuario_codigo,
+                    )
+                except bdamazon_client.BDAmazonError as e:
+                    _push_log(job, "log",
+                              f"[ERRO] {sku_raiz} ({conta}): {e}",
+                              nivel="Erro")
+                    continue
+                skus_criados.append({
+                    "sku_market": criado.sku_market,
+                    "sku_raiz": sku_raiz,
+                    "conta_codigo": conta,
+                    "versao": criado.versao,
+                    "marca": marca,
+                    "ean": ean,
+                })
+                ws.append([criado.sku_market, marca, ean])
+                _push_log(job, "log",
+                          f"[OK] {sku_raiz} -> {criado.sku_market} (v{criado.versao})",
+                          nivel="Info")
+
+            if not skus_criados:
+                job.status = "error"
+                _push_log(job, "error",
+                          "Nenhum SKU foi criado no BDAmazon — abortando geração da planilha.")
+                return
+
+            # Persiste lista de sku_market criados para a UI mostrar no fim
+            job.skus_market = skus_criados  # atributo dinâmico, ok
+
+            # Serializa workbook sintético e roda o pipeline existente
+            buffer_entrada = io.BytesIO()
+            wb_sintetico.save(buffer_entrada)
+            buffer_entrada.seek(0)
+
+            _push_log(job, "status",
+                      f"{len(skus_criados)} SKU(s) criados. Gerando planilha Amazon...")
+
+            def cb_status(msg):
+                job.mensagem = msg
+                _push_log(job, "status", msg)
+
+            def cb_progresso(valor):
+                job.progresso = valor
+                _push_log(job, "progresso",
+                          f"{int(valor * 100)}%", valor=valor)
+
+            template = io.BytesIO(arquivo_template) if arquivo_template else None
+            resultado = processador.processar(
+                arquivo_entrada=buffer_entrada,
+                arquivo_template=template,
+                callback_status=cb_status,
+                callback_progresso=cb_progresso,
+            )
+            for log_proc in (resultado.logs or []):
+                _push_log(job, "log",
+                          f"[{log_proc.tipo}] {log_proc.sku}: {log_proc.mensagem}",
+                          nivel=log_proc.tipo)
+            job.resultado = resultado
+            if resultado.sucesso:
+                _persistir_resultado_em_disco(job.id, resultado, job.owner_id,
+                                              job.tipo)
+                job.status = "done"
+                _push_log(job, "done", resultado.mensagem or "Concluído.",
+                          total=resultado.total_processados,
+                          erros=resultado.total_erros,
+                          avisos=resultado.total_avisos,
+                          tempo=round(resultado.tempo_processamento, 2),
+                          arquivo=resultado.nome_arquivo,
+                          skus_market=[s["sku_market"] for s in skus_criados])
+            else:
+                job.status = "error"
+                _push_log(job, "error",
+                          resultado.mensagem or "Falha no processamento.")
+        except Exception as e:
+            job.status = "error"
+            _push_log(job, "error", f"Exceção não tratada: {e}")
+        finally:
+            job.log_queue.put({"tipo": "end"})
+
+    @app.route("/api/processar/sku-manual", methods=["POST"])
+    @login_required
+    def api_processar_sku_manual():
+        """Recebe entradas digitadas (lista JSON) + template .xlsm.
+        Para cada entrada chama POST /api/v1/skus do BDAmazon e usa o
+        sku_market retornado como SKU da planilha Amazon."""
+        cfg_atual = app.config.get("APP_CONFIG", config)
+
+        if not current_user.codigo_externo:
+            return jsonify({
+                "sucesso": False,
+                "mensagem": (
+                    "Seu usuário não tem 'codigo_externo' definido. "
+                    "Peça ao admin pra cadastrar o seu código do BDAmazon "
+                    "em /admin/usuarios."
+                ),
+            }), 400
+
+        entradas_raw = request.form.get("entradas")
+        if not entradas_raw:
+            return jsonify({"sucesso": False,
+                            "mensagem": "Campo 'entradas' ausente."}), 400
+        try:
+            entradas = json.loads(entradas_raw)
+        except ValueError:
+            return jsonify({"sucesso": False,
+                            "mensagem": "Campo 'entradas' não é JSON válido."}), 400
+        if not isinstance(entradas, list) or not entradas:
+            return jsonify({"sucesso": False,
+                            "mensagem": "'entradas' precisa ser lista não-vazia."}), 400
+
+        arquivo_template = request.files.get("arquivo_template")
+        if not arquivo_template:
+            return jsonify({"sucesso": False,
+                            "mensagem": "arquivo_template é obrigatório."}), 400
+        bytes_template = arquivo_template.read()
+
+        job = Job("sku-manual", owner_id=current_user.id)
+        with JOBS_LOCK:
+            JOBS[job.id] = job
+        _limpar_jobs_antigos()
+
+        threading.Thread(
+            target=_executar_em_thread_sku_manual,
+            args=(job, ProcessadorSKU(cfg_atual), entradas,
+                  current_user.codigo_externo, bytes_template),
+            daemon=True,
+        ).start()
+        return jsonify({"job_id": job.id})
 
     @app.route("/api/processar/sku", methods=["POST"])
     @login_required

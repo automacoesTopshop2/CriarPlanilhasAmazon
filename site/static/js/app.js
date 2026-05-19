@@ -530,6 +530,215 @@
     }
 
     // ==========================================================
+    // SKU MANUAL (entrada por caixas de texto + API BDAmazon)
+    // ==========================================================
+    function initSkuManual(opts) {
+        // Toggle Planilha/Manual
+        const tabs = document.querySelectorAll('.modo-tabs__tab');
+        const cardPlanilha = document.getElementById('card-planilha');
+        const cardManual = document.getElementById('card-manual');
+        if (!cardPlanilha || !cardManual) return;
+
+        tabs.forEach(tab => tab.addEventListener('click', () => {
+            tabs.forEach(t => {
+                const ativa = t === tab;
+                t.classList.toggle('is-active', ativa);
+                t.setAttribute('aria-selected', ativa ? 'true' : 'false');
+            });
+            const modo = tab.getAttribute('data-modo');
+            cardPlanilha.classList.toggle('hide', modo !== 'planilha');
+            cardManual.classList.toggle('hide', modo !== 'manual');
+        }));
+
+        const tbody = document.getElementById('tbl-manual-body');
+        const selectDefault = document.getElementById('manual-conta-default');
+        const marcaDefault = document.getElementById('manual-marca-default');
+        const eanDefault = document.getElementById('manual-ean-default');
+        const btnProcessar = document.getElementById('btn-processar-manual');
+        let contas = [];
+
+        // Carrega contas do BDAmazon
+        fetch(opts.endpointContas)
+            .then(r => r.json())
+            .then(data => {
+                if (!data.sucesso) {
+                    selectDefault.innerHTML =
+                        `<option value="">Erro: ${escape(data.mensagem || 'falha ao listar contas')}</option>`;
+                    toast(data.mensagem || 'Falha ao carregar contas do BDAmazon.', 'err');
+                    return;
+                }
+                contas = data.contas || [];
+                if (!contas.length) {
+                    selectDefault.innerHTML =
+                        `<option value="">Nenhuma conta com codigo_externo cadastrada</option>`;
+                    return;
+                }
+                const opts = contas
+                    .map(c => `<option value="${escape(c.codigo)}">${escape(c.nome)} (${escape(c.codigo)})</option>`)
+                    .join('');
+                selectDefault.innerHTML = `<option value="">— selecione —</option>` + opts;
+            })
+            .catch(e => {
+                selectDefault.innerHTML =
+                    `<option value="">Erro de rede</option>`;
+                toast('Falha ao carregar contas: ' + e, 'err');
+            });
+
+        // Renderiza select de contas dentro de uma linha
+        function renderSelectContas(valorSelecionado) {
+            if (!contas.length) {
+                return `<select disabled><option>—</option></select>`;
+            }
+            const opts = contas.map(c =>
+                `<option value="${escape(c.codigo)}"${c.codigo === valorSelecionado ? ' selected' : ''}>${escape(c.nome)} (${escape(c.codigo)})</option>`
+            ).join('');
+            return `<select data-field="conta_codigo"><option value="">— selecione —</option>${opts}</select>`;
+        }
+
+        function novaLinha(skuRaiz) {
+            const tr = document.createElement('tr');
+            const contaSel = selectDefault.value;
+            tr.innerHTML = `
+                <td class="manual-num"></td>
+                <td><input data-field="sku_raiz" type="text" value="${escape(skuRaiz || '')}" placeholder="Ex.: ABC123"></td>
+                <td>${renderSelectContas(contaSel)}</td>
+                <td><input data-field="marca" type="text" value="${escape(marcaDefault.value || '')}"></td>
+                <td><input data-field="ean" type="text" value="${escape(eanDefault.value || '')}"></td>
+                <td><button type="button" class="tbl-manual__del" data-role="del-linha" title="Remover">✕</button></td>
+            `;
+            tbody.appendChild(tr);
+            atualizarNumeracao();
+            atualizarBotaoProcessar();
+            return tr;
+        }
+
+        function atualizarNumeracao() {
+            tbody.querySelectorAll('tr').forEach((tr, i) => {
+                const td = tr.querySelector('.manual-num');
+                if (td) td.textContent = String(i + 1);
+            });
+        }
+
+        function atualizarBotaoProcessar() {
+            const linhas = tbody.querySelectorAll('tr').length;
+            const temTemplate = !!dropzoneFiles[opts.templateField];
+            btnProcessar.disabled = !(linhas > 0 && temTemplate);
+            btnProcessar.title = btnProcessar.disabled
+                ? 'Adicione pelo menos uma linha e envie o template .xlsm'
+                : '';
+        }
+
+        document.getElementById('btn-add-linha').addEventListener('click', () => novaLinha(''));
+        document.getElementById('btn-limpar-tabela').addEventListener('click', () => {
+            if (!tbody.children.length) return;
+            if (!confirm('Limpar todas as linhas?')) return;
+            tbody.innerHTML = '';
+            atualizarBotaoProcessar();
+        });
+        document.getElementById('btn-importar-lote').addEventListener('click', () => {
+            const ta = document.getElementById('manual-lote');
+            const linhas = ta.value.split(/\r?\n/)
+                .map(l => l.trim())
+                .filter(l => l && !l.startsWith('#'));
+            if (!linhas.length) {
+                toast('Nada para importar — cole SKUs Raiz no campo (1 por linha).', 'err');
+                return;
+            }
+            linhas.forEach(sku => novaLinha(sku));
+            ta.value = '';
+            toast(`${linhas.length} linha(s) importada(s).`, 'ok');
+        });
+
+        tbody.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-role="del-linha"]');
+            if (!btn) return;
+            btn.closest('tr').remove();
+            atualizarNumeracao();
+            atualizarBotaoProcessar();
+        });
+
+        // Quando o dropzone do template muda, reflete no botão. O setupDropzone já chama
+        // updateProcessButton (do modo planilha) — observamos também via mutationobserver
+        // no input do dropzone. Pra simplificar: hook no change do input.
+        document.querySelectorAll(`[data-field="${opts.templateField}"] input[data-role="dropzone-input"]`)
+            .forEach(inp => inp.addEventListener('change', atualizarBotaoProcessar));
+        // Também quando o clear é clicado
+        document.querySelectorAll(`[data-field="${opts.templateField}"] [data-role="dropzone-clear"]`)
+            .forEach(b => b.addEventListener('click', () => setTimeout(atualizarBotaoProcessar, 0)));
+
+        btnProcessar.addEventListener('click', () => {
+            // Monta payload
+            const linhas = Array.from(tbody.querySelectorAll('tr'));
+            const entradas = [];
+            for (const tr of linhas) {
+                const sku = (tr.querySelector('[data-field="sku_raiz"]').value || '').trim();
+                const conta = (tr.querySelector('[data-field="conta_codigo"]').value || '').trim();
+                const marca = (tr.querySelector('[data-field="marca"]').value || '').trim();
+                const ean = (tr.querySelector('[data-field="ean"]').value || '').trim();
+                if (!sku || !conta) {
+                    toast(`Linha ${entradas.length + 1}: SKU Raiz e Conta são obrigatórios.`, 'err');
+                    return;
+                }
+                entradas.push({ sku_raiz: sku, conta_codigo: conta, marca, ean });
+            }
+            if (!entradas.length) {
+                toast('Adicione pelo menos uma linha.', 'err');
+                return;
+            }
+            const template = dropzoneFiles[opts.templateField];
+            if (!template) {
+                toast('Envie o template .xlsm primeiro.', 'err');
+                return;
+            }
+
+            const fd = new FormData();
+            fd.append('entradas', JSON.stringify(entradas));
+            fd.append('arquivo_template', template);
+
+            const card = document.getElementById('processing');
+            const consoleEl = document.getElementById('console');
+            const statusEl = document.getElementById('processing-status');
+            const badge = document.getElementById('processing-badge');
+            const progressBar = document.getElementById('progress-bar');
+            const resultHost = document.getElementById('result-host');
+
+            card.classList.remove('hide');
+            consoleEl.innerHTML = '';
+            progressBar.style.width = '0%';
+            resultHost.innerHTML = '';
+            statusEl.textContent = `Criando ${entradas.length} SKU(s) no BDAmazon...`;
+            badge.className = 'badge badge--info';
+            badge.textContent = 'criando';
+            btnProcessar.disabled = true;
+
+            fetch(opts.endpointProcessar, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrf() },
+                body: fd,
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data && data.sucesso === false) {
+                        throw new Error(data.mensagem || 'Falha na rota');
+                    }
+                    if (!data.job_id) throw new Error('Resposta sem job_id');
+                    streamLogs(data.job_id);
+                })
+                .catch(err => {
+                    statusEl.textContent = 'Falha ao enviar';
+                    badge.className = 'badge badge--off';
+                    badge.textContent = 'erro';
+                    appendLog({ tipo: 'error', mensagem: String(err.message || err), timestamp: agora() });
+                    btnProcessar.disabled = false;
+                });
+        });
+
+        // Inicia com uma linha vazia pra orientar o uso
+        novaLinha('');
+    }
+    window.initSkuManual = initSkuManual;
+
+    // ==========================================================
     // BOOT
     // ==========================================================
     document.addEventListener('DOMContentLoaded', () => {

@@ -1187,3 +1187,88 @@ html { scroll-behavior: smooth; }
     color: #047857;
     border-color: transparent;
 }
+
+/* ---------- Toggle Planilha/Manual (página /sku) ---------- */
+.modo-tabs {
+    display: inline-flex;
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 4px;
+    gap: 4px;
+    margin-bottom: var(--space-4);
+}
+.modo-tabs__tab {
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    color: var(--text-muted);
+    background: transparent;
+    transition: background 0.15s, color 0.15s;
+}
+.modo-tabs__tab.is-active {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow-xs);
+}
+
+/* Tabela de entradas manuais (SKU Raiz / Conta / Marca / EAN) */
+.tbl-manual {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: var(--space-3);
+    font-size: 13px;
+}
+.tbl-manual th {
+    text-align: left;
+    padding: 8px 10px;
+    background: var(--surface-3);
+    color: var(--text-muted);
+    font-weight: 500;
+    border-bottom: 1px solid var(--border);
+}
+.tbl-manual td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+}
+.tbl-manual input,
+.tbl-manual select {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    font-size: 13px;
+}
+.tbl-manual input:focus,
+.tbl-manual select:focus {
+    outline: 2px solid var(--primary);
+    outline-offset: -1px;
+}
+.tbl-manual__del {
+    color: var(--danger);
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+}
+.tbl-manual__del:hover { background: var(--danger-soft); }
+
+.manual-actions {
+    display: flex;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: var(--space-3);
+}
+
+.skus-criados {
+    margin-top: var(--space-4);
+    background: var(--success-soft);
+    border: 1px solid var(--success);
+    border-radius: var(--radius);
+    padding: var(--space-3) var(--space-4);
+    font-size: 13px;
+    color: #065f46;
+}
+.skus-criados strong { display: block; margin-bottom: 4px; }
+.skus-criados ul { font-family: var(--font-mono); margin-top: 4px; }
+.skus-criados li { padding: 2px 0; }

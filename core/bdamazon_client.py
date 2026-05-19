@@ -1,0 +1,236 @@
+"""
+Cliente HTTP para a API REST do BDAmazon.
+
+Documentação do contrato: ver chat / repositório do BDAmazon.
+Base URL: configurável via BDAMAZON_API_BASE (default = produção).
+Autenticação: header X-API-Key com BDAMAZON_API_KEY.
+
+Funções públicas:
+    - listar_contas()          -> list[Conta]
+    - criar_sku(...)           -> SkuCriado
+    - consultar_sku(sku_market)-> SkuCriado | None
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from dataclasses import dataclass
+from typing import Any, List, Optional
+
+import requests
+
+
+log = logging.getLogger(__name__)
+
+
+DEFAULT_BASE = "https://bdamazon-web-production.up.railway.app/api/v1"
+TIMEOUT_PADRAO = 15
+
+
+class BDAmazonError(Exception):
+    """Erro genérico ao falar com a API BDAmazon."""
+
+    def __init__(self, mensagem: str, *, status: Optional[int] = None,
+                 detail: Any = None):
+        super().__init__(mensagem)
+        self.status = status
+        self.detail = detail
+
+
+class BDAmazonAuthError(BDAmazonError):
+    """401/403 — chave inválida/revogada/sem escopo."""
+
+
+class BDAmazonNotFoundError(BDAmazonError):
+    """404 — conta_codigo / usuario_codigo / sku_market não existe."""
+
+
+class BDAmazonRateLimitError(BDAmazonError):
+    """429 — rate-limit por IP."""
+
+
+@dataclass
+class Conta:
+    codigo: str
+    nome: str
+    marca: str
+    tipo_canal: str
+    prefixo_sku: str
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Conta":
+        return cls(
+            codigo=d.get("codigo", ""),
+            nome=d.get("nome", ""),
+            marca=d.get("marca", ""),
+            tipo_canal=d.get("tipo_canal", ""),
+            prefixo_sku=d.get("prefixo_sku", ""),
+        )
+
+
+@dataclass
+class SkuCriado:
+    sku_market: str
+    sku_raiz: str
+    versao: int
+    conta_codigo: str
+    conta_nome: str
+    asin: Optional[str]
+    titulo: Optional[str]
+    aguardando_titulo: bool
+    criado_em: str
+    criado_por: str
+    raw: dict
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "SkuCriado":
+        return cls(
+            sku_market=d.get("sku_market", ""),
+            sku_raiz=d.get("sku_raiz", ""),
+            versao=int(d.get("versao") or 1),
+            conta_codigo=d.get("conta_codigo", ""),
+            conta_nome=d.get("conta_nome", ""),
+            asin=d.get("asin"),
+            titulo=d.get("titulo"),
+            aguardando_titulo=bool(d.get("aguardando_titulo", False)),
+            criado_em=d.get("criado_em", ""),
+            criado_por=d.get("criado_por", ""),
+            raw=d,
+        )
+
+
+def _base() -> str:
+    return (os.getenv("BDAMAZON_API_BASE") or DEFAULT_BASE).rstrip("/")
+
+
+def _key() -> str:
+    chave = os.getenv("BDAMAZON_API_KEY", "").strip()
+    if not chave:
+        raise BDAmazonError(
+            "BDAMAZON_API_KEY não está configurada no ambiente. "
+            "Defina a variável no Railway (ou .env em dev) com a chave "
+            "fornecida pelo admin do BDAmazon."
+        )
+    return chave
+
+
+def _headers() -> dict:
+    return {
+        "X-API-Key": _key(),
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+
+def _request(method: str, path: str, *, json_body: Optional[dict] = None,
+             timeout: int = TIMEOUT_PADRAO) -> dict:
+    url = f"{_base()}{path}"
+    try:
+        resp = requests.request(
+            method=method,
+            url=url,
+            headers=_headers(),
+            json=json_body,
+            timeout=timeout,
+        )
+    except requests.RequestException as e:
+        raise BDAmazonError(f"Falha de rede ao chamar {url}: {e}") from e
+
+    if resp.status_code == 401 or resp.status_code == 403:
+        detail = _detail(resp)
+        raise BDAmazonAuthError(
+            f"BDAmazon recusou a autenticação ({resp.status_code}): {detail}",
+            status=resp.status_code,
+            detail=detail,
+        )
+    if resp.status_code == 404:
+        detail = _detail(resp)
+        raise BDAmazonNotFoundError(
+            f"Recurso não encontrado no BDAmazon: {detail}",
+            status=404,
+            detail=detail,
+        )
+    if resp.status_code == 429:
+        raise BDAmazonRateLimitError(
+            "Rate-limit do BDAmazon excedido (60 req/min). "
+            "Aguarde alguns segundos e tente novamente.",
+            status=429,
+        )
+    if not resp.ok:
+        detail = _detail(resp)
+        raise BDAmazonError(
+            f"BDAmazon retornou HTTP {resp.status_code}: {detail}",
+            status=resp.status_code,
+            detail=detail,
+        )
+
+    try:
+        return resp.json()
+    except ValueError as e:
+        raise BDAmazonError(
+            f"Resposta do BDAmazon não é JSON válido: {resp.text[:200]}"
+        ) from e
+
+
+def _detail(resp: requests.Response) -> str:
+    try:
+        body = resp.json()
+        if isinstance(body, dict):
+            return str(body.get("detail") or body)
+        return str(body)
+    except ValueError:
+        return resp.text[:200]
+
+
+# ---------------------------------------------------------------------------
+# API pública
+# ---------------------------------------------------------------------------
+
+def listar_contas() -> List[Conta]:
+    """GET /api/v1/contas — todas as contas ativas com codigo_externo definido."""
+    data = _request("GET", "/contas")
+    if not isinstance(data, list):
+        raise BDAmazonError(f"Resposta inesperada em /contas: {data!r}")
+    return [Conta.from_dict(item) for item in data]
+
+
+def criar_sku(
+    *,
+    conta_codigo: str,
+    sku_raiz: str,
+    usuario_codigo: str,
+    asin: Optional[str] = None,
+    titulo: Optional[str] = None,
+    tipo_anuncio_id: Optional[int] = None,
+    obs: Optional[str] = None,
+    data_lancamento: Optional[str] = None,
+) -> SkuCriado:
+    """POST /api/v1/skus — cria SKU e devolve o sku_market gerado."""
+    body: dict = {
+        "conta_codigo": conta_codigo,
+        "sku_raiz": sku_raiz,
+        "usuario_codigo": usuario_codigo,
+    }
+    if asin:
+        body["asin"] = asin
+    if titulo:
+        body["titulo"] = titulo
+    if tipo_anuncio_id is not None:
+        body["tipo_anuncio_id"] = tipo_anuncio_id
+    if obs:
+        body["obs"] = obs
+    if data_lancamento:
+        body["data_lancamento"] = data_lancamento
+
+    data = _request("POST", "/skus", json_body=body)
+    return SkuCriado.from_dict(data)
+
+
+def consultar_sku(sku_market: str) -> Optional[SkuCriado]:
+    """GET /api/v1/skus/{sku_market} — None se 404."""
+    try:
+        data = _request("GET", f"/skus/{sku_market}")
+    except BDAmazonNotFoundError:
+        return None
+    return SkuCriado.from_dict(data)

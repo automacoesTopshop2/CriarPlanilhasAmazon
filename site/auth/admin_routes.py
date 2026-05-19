@@ -159,6 +159,43 @@ def ativar(id: str):
     return jsonify({"sucesso": True})
 
 
+@admin_bp.route("/usuarios/<id>/codigo-externo", methods=["POST"])
+@login_required
+@requer_admin
+def alterar_codigo_externo(id: str):
+    """Define/altera o codigo_externo do usuário (usado em chamadas BDAmazon)."""
+    _valida_csrf_ajax()
+    u = db.session.get(Usuario, id)
+    if not u:
+        abort(404)
+    data = request.get_json(silent=True) or {}
+    novo = (data.get("codigo_externo") or "").strip() or None
+    if novo and (len(novo) > 64 or any(c.isspace() for c in novo)):
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "codigo_externo deve ter até 64 caracteres sem espaços.",
+        }), 400
+    if novo:
+        ja = (
+            db.session.query(Usuario)
+            .filter(Usuario.codigo_externo == novo, Usuario.id != u.id)
+            .first()
+        )
+        if ja:
+            return jsonify({
+                "sucesso": False,
+                "mensagem": f"codigo_externo já em uso por {ja.email}.",
+            }), 400
+    u.codigo_externo = novo
+    db.session.commit()
+    registrar_evento(
+        "codigo_externo_alterado",
+        usuario_id=u.id,
+        detalhes=f"por {current_user.id}; novo={novo}",
+    )
+    return jsonify({"sucesso": True, "codigo_externo": novo})
+
+
 @admin_bp.route("/usuarios/<id>/reset-senha", methods=["POST"])
 @login_required
 @requer_admin

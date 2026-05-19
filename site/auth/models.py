@@ -53,6 +53,11 @@ class Usuario(UserMixin, db.Model):
     bloqueado_ate: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     # versão da sessão — incrementar invalida todas as sessões ativas do usuário
     sessao_versao: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # codigo_externo: identifier deste usuário em sistemas externos (ex: BDAmazon).
+    # Necessário para chamadas POST /api/v1/skus do BDAmazon.
+    codigo_externo: Mapped[Optional[str]] = mapped_column(
+        String(64), unique=True, nullable=True, index=True
+    )
 
     # ---- helpers ----
 

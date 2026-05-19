@@ -19,7 +19,7 @@
 
     <table class="table">
         <thead>
-            <tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Status</th><th>Último login</th><th></th></tr>
+            <tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Status</th><th>Último login</th><th>Código externo (BDAmazon)</th><th></th></tr>
         </thead>
         <tbody>
             {% for u in usuarios %}
@@ -29,6 +29,11 @@
                 <td><span class="badge badge--{{ 'warning' if u.papel == 'admin' else 'info' }}">{{ u.papel }}</span></td>
                 <td>{% if u.ativo %}<span class="badge badge--success">ativo</span>{% else %}<span class="badge badge--danger">desativado</span>{% endif %}</td>
                 <td>{% if u.ultimo_login %}{{ u.ultimo_login.strftime('%d/%m/%Y %H:%M') }}{% else %}—{% endif %}</td>
+                <td>
+                    <span class="codigo-externo-val" data-id="{{ u.id }}">{{ u.codigo_externo or '—' }}</span>
+                    <button class="btn btn--xs btn--ghost" data-action="editar-codigo-externo"
+                            data-id="{{ u.id }}" data-atual="{{ u.codigo_externo or '' }}">editar</button>
+                </td>
                 <td class="row-actions">
                     {% if u.papel == 'usuario' %}
                     <button class="btn btn--xs" data-action="promover" data-id="{{ u.id }}">↑ admin</button>

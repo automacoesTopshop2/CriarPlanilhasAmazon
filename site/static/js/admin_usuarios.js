@@ -67,6 +67,26 @@
                 alert(`Link copiado (válido por ${r.data.expira_horas}h):\n\n${r.data.link}`);
             } else toast(r.data.mensagem || 'Falha.', false);
         }
+        else if (action === 'editar-codigo-externo') {
+            const atual = btn.getAttribute('data-atual') || '';
+            const novo = window.prompt(
+                'Código externo deste usuário no BDAmazon (deixe em branco para remover).\n' +
+                'Use o mesmo identificador que o admin do BDAmazon cadastrou em "usuarios.codigo_externo".',
+                atual
+            );
+            if (novo === null) return;
+            const valor = novo.trim();
+            const r = await api(`/admin/usuarios/${id}/codigo-externo`, {
+                method: 'POST',
+                body: JSON.stringify({ codigo_externo: valor }),
+            });
+            if (r.ok) {
+                toast('Código externo atualizado.', true);
+                const span = document.querySelector(`.codigo-externo-val[data-id="${id}"]`);
+                if (span) span.textContent = valor || '—';
+                btn.setAttribute('data-atual', valor);
+            } else toast(r.data.mensagem || 'Falha.', false);
+        }
         else if (action === 'revogar-convite') {
             if (!confirm('Revogar este convite?')) return;
             const r = await api(`/admin/convites/${id}/revogar`, { method: 'POST' });

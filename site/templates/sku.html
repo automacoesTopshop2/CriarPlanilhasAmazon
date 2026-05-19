@@ -25,6 +25,12 @@
     <p>Preencha o template Amazon a partir de uma lista de SKUs, com preços e descrições aplicados automaticamente.</p>
 </div>
 
+<!-- ============= MODO ============= -->
+<div class="modo-tabs" role="tablist" aria-label="Modo de entrada">
+    <button type="button" class="modo-tabs__tab is-active" data-modo="planilha" role="tab" aria-selected="true">Planilha</button>
+    <button type="button" class="modo-tabs__tab" data-modo="manual" role="tab" aria-selected="false">Manual (BDAmazon)</button>
+</div>
+
 <!-- ============= STEPS ============= -->
 <div class="steps">
     <div class="step is-active" data-step="1">
@@ -43,8 +49,8 @@
     </div>
 </div>
 
-<!-- ============= FORM ============= -->
-<div class="card">
+<!-- ============= FORM (modo planilha) ============= -->
+<div class="card" id="card-planilha">
     <div class="card__header">
         <div>
             <div class="card__title">Configuração da criação</div>
@@ -90,6 +96,78 @@
     </div>
 </div>
 
+<!-- ============= FORM (modo manual) ============= -->
+<div class="card hide" id="card-manual">
+    <div class="card__header">
+        <div>
+            <div class="card__title">Entrada manual (cria SKU no BDAmazon)</div>
+            <div class="card__sub">Digite SKU Raiz, escolha a conta, marca e EAN. O sistema chama a API do BDAmazon para gerar o <code>sku_market</code> e então preenche a planilha Amazon.</div>
+        </div>
+    </div>
+
+    <div class="card__body">
+        <!-- Defaults (aplicados ao colar lote) -->
+        <div class="grid grid--3">
+            <div class="field">
+                <label class="label" for="manual-conta-default">Conta (padrão p/ novas linhas)</label>
+                <select id="manual-conta-default" class="select">
+                    <option value="">— carregando contas… —</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="label" for="manual-marca-default">Marca da empresa <span class="label__hint">aplicada a novas linhas</span></label>
+                <input id="manual-marca-default" type="text" class="select" placeholder="Ex.: Genérico" value="Genérico">
+            </div>
+            <div class="field">
+                <label class="label" for="manual-ean-default">EAN da empresa <span class="label__hint">aplicada a novas linhas</span></label>
+                <input id="manual-ean-default" type="text" class="select" placeholder="Opcional">
+            </div>
+        </div>
+
+        <div class="grid grid--2 mt-6">
+            <div class="field">
+                <label class="label" for="manual-lote">Colar lote (1 SKU Raiz por linha)</label>
+                <textarea id="manual-lote" rows="4" class="select" placeholder="ABC123&#10;XYZ987&#10;..."></textarea>
+                <div class="manual-actions">
+                    <button type="button" class="btn btn--sm btn--dark" id="btn-importar-lote">Importar para a tabela</button>
+                    <button type="button" class="btn btn--sm btn--ghost" id="btn-add-linha">+ adicionar 1 linha</button>
+                    <button type="button" class="btn btn--sm btn--ghost" id="btn-limpar-tabela">limpar tabela</button>
+                </div>
+            </div>
+
+            <div class="field">
+                <label class="label">Template NOGORA (.xlsm)</label>
+                {% with id_suffix="template-manual", accept=".xlsm", label="Solte o template Amazon", sublabel="ou clique para selecionar (.xlsm)" %}
+                    {% include "_dropzone.html" %}
+                {% endwith %}
+            </div>
+        </div>
+
+        <table class="tbl-manual" id="tbl-manual">
+            <thead>
+                <tr>
+                    <th style="width:80px">#</th>
+                    <th>SKU Raiz</th>
+                    <th style="width:25%">Conta</th>
+                    <th>Marca</th>
+                    <th>EAN</th>
+                    <th style="width:48px"></th>
+                </tr>
+            </thead>
+            <tbody id="tbl-manual-body">
+                <!-- linhas adicionadas via JS -->
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card__footer">
+        <button id="btn-processar-manual" class="btn btn--primary" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Criar SKUs e gerar planilha
+        </button>
+    </div>
+</div>
+
 <!-- ============= CONSOLE / PROGRESSO ============= -->
 <div id="processing" class="card mt-6 hide">
     <div class="card__header">
@@ -115,6 +193,11 @@
     initProcessamento({
         endpoint: "{{ url_for('api_processar_sku') }}",
         camposArquivos: { arquivo_entrada: 'entrada', arquivo_template: 'template' },
+    });
+    initSkuManual({
+        endpointContas: "{{ url_for('api_bdamazon_contas') }}",
+        endpointProcessar: "{{ url_for('api_processar_sku_manual') }}",
+        templateField: "template-manual",
     });
 </script>
 {% endblock %}
