@@ -251,49 +251,30 @@ class ProcessadorASIN(ProcessadorBase):
         
         return True
     
-    def _montar_dados_asin(self, asin: str, 
+    def _montar_dados_asin(self, asin: str,
                            sku_original: Optional[str]) -> Dict[str, Any]:
         """
         Monta o dicionário de dados para processamento ASIN.
-        
+
         Args:
             asin: Código ASIN
             sku_original: SKU original completo (com prefixo de conta)
-            
+
         Returns:
             Dicionário com dados do produto
         """
-        dados = {}
-        
-        # Identificação
+        # Parte de TODOS os valores fixos da config (assim como o ProcessadorSKU).
+        # O write final em _processar_linha_asin é dirigido pelo template:
+        # chaves cujo nome não casa com nenhuma coluna do template são ignoradas.
+        # Iniciar com a config completa garante que campos novos adicionados
+        # via /admin/configuracoes (valores_fixos_customizados) sejam aplicados
+        # tanto em /sku quanto em /asin — antes uma lista hardcoded aqui fazia
+        # o /asin ignorar qualquer chave nova.
+        dados = self.config.valores_fixos_padrao.copy()
+
+        # Identificação (sobrescreve eventual valor fixo de mesmo nome)
         dados['ASIN'] = asin
         dados['SKU'] = sku_original or ""
-        
-        # Valores fixos (apenas os necessários para ASIN)
-        campos_fixos = [
-            'Condição do Produto',
-            'Código do canal de processamento (BR)',
-            'Quantidade (BR)',
-            'País de origem',
-            'Baterias são necessárias?',
-            'Regulamentações de produtos perigosos',
-            'Unidade de comprimento do pacote',
-            'Unidade de largura do pacote',
-            'Unidade de altura do pacote',
-            'Unidade de peso do pacote',
-            'Unidade de peso do item',
-            'Grupo de envio de mercadorias (BR)'
-        ]
-        
-        for campo in campos_fixos:
-            if campo in self.config.valores_fixos_padrao:
-                dados[campo] = self.config.valores_fixos_padrao[campo]
-            else:
-                campo_norm = Utilitarios.normalizar_texto(campo)
-                for chave, valor in self.config.valores_fixos_padrao.items():
-                    if Utilitarios.normalizar_texto(chave) == campo_norm:
-                        dados[campo] = valor
-                        break
         
         # Preço (obter_preco já faz tratar_sku internamente)
         if sku_original:
