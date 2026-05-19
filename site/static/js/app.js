@@ -562,9 +562,12 @@
             .then(r => r.json())
             .then(data => {
                 if (!data.sucesso) {
+                    const msg = data.mensagem || 'falha ao listar contas';
+                    const det = data.detalhe ? ` (${data.detalhe})` : '';
                     selectDefault.innerHTML =
-                        `<option value="">Erro: ${escape(data.mensagem || 'falha ao listar contas')}</option>`;
-                    toast(data.mensagem || 'Falha ao carregar contas do BDAmazon.', 'err');
+                        `<option value="">Erro: ${escape(msg)}</option>`;
+                    toast(msg + det, 'err');
+                    console.error('[BDAmazon /contas]', data);
                     return;
                 }
                 contas = data.contas || [];

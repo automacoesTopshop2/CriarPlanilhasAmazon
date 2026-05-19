@@ -605,6 +605,16 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
     def api_bdamazon_contas():
         """Proxy autenticado para GET /api/v1/contas do BDAmazon.
         Devolve a lista pra UI popular o <select> do formulário manual."""
+        if not (os.getenv("BDAMAZON_API_KEY") or "").strip():
+            return jsonify({
+                "sucesso": False,
+                "mensagem": (
+                    "BDAMAZON_API_KEY não está configurada no servidor. "
+                    "Peça ao admin pra setar a variável no Railway "
+                    "(Settings → Variables) com a chave fornecida pelo BDAmazon."
+                ),
+                "detalhe": "env var BDAMAZON_API_KEY ausente ou vazia",
+            }), 503
         try:
             contas = bdamazon_client.listar_contas()
         except bdamazon_client.BDAmazonAuthError as e:
@@ -614,6 +624,7 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
                 "detalhe": str(e),
             }), 502
         except bdamazon_client.BDAmazonError as e:
+            app.logger.error("Falha no BDAmazon /contas: %s", e)
             return jsonify({
                 "sucesso": False,
                 "mensagem": "Não consegui falar com o BDAmazon.",

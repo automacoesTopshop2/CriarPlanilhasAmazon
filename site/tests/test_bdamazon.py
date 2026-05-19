@@ -22,7 +22,20 @@ from core import bdamazon_client
 # /api/bdamazon/contas
 # ---------------------------------------------------------------------------
 
-def test_lista_contas_proxy_devolve_contas(client, login_admin):
+def test_lista_contas_sem_api_key_retorna_503(client, login_admin, monkeypatch):
+    """Sem BDAMAZON_API_KEY no env, a rota deve devolver 503 com mensagem clara
+    (e não cair no 502 genérico de 'BDAmazon offline')."""
+    monkeypatch.delenv("BDAMAZON_API_KEY", raising=False)
+    r = client.get("/api/bdamazon/contas")
+    assert r.status_code == 503
+    data = r.get_json()
+    assert data["sucesso"] is False
+    assert "BDAMAZON_API_KEY" in data["mensagem"]
+    assert "ausente" in data["detalhe"].lower()
+
+
+def test_lista_contas_proxy_devolve_contas(client, login_admin, monkeypatch):
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
     contas_fake = [
         bdamazon_client.Conta(codigo="BOX2", nome="BOX2BRASIL",
                               marca="BOX2", tipo_canal="BASE",
@@ -40,7 +53,8 @@ def test_lista_contas_proxy_devolve_contas(client, login_admin):
     assert data["contas"][0]["nome"] == "BOX2BRASIL"
 
 
-def test_lista_contas_erro_auth_vira_502(client, login_admin):
+def test_lista_contas_erro_auth_vira_502(client, login_admin, monkeypatch):
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
     err = bdamazon_client.BDAmazonAuthError("chave inválida", status=401)
     with patch("core.bdamazon_client.listar_contas", side_effect=err):
         r = client.get("/api/bdamazon/contas")
