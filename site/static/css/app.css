@@ -907,6 +907,33 @@ html { scroll-behavior: smooth; }
 }
 .user-chip__role { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; }
 .user-chip__logout { margin: 0; }
+
+/* Indicador 2FA na sidebar */
+.sidebar__2fa {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    margin-bottom: var(--space-3);
+    border-radius: var(--radius);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    text-decoration: none;
+    transition: background 0.15s, color 0.15s;
+}
+.sidebar__2fa svg { width: 14px; height: 14px; flex-shrink: 0; }
+.sidebar__2fa--ok {
+    background: rgba(16, 185, 129, 0.15);
+    color: #6EE7B7;
+}
+.sidebar__2fa--ok:hover { background: rgba(16, 185, 129, 0.25); }
+.sidebar__2fa--warn {
+    background: rgba(245, 158, 11, 0.18);
+    color: #FCD34D;
+}
+.sidebar__2fa--warn:hover { background: rgba(245, 158, 11, 0.28); }
 .sidebar__version { font-size: 11px; color: var(--text-faint); text-align: center; margin-top: var(--space-2); }
 
 /* ==========================================================================

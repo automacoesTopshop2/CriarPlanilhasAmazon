@@ -121,6 +121,28 @@
                     </button>
                 </form>
             </div>
+            {% if current_user.totp_enabled %}
+            <a href="{{ url_for('auth.perfil_seguranca') }}"
+               class="sidebar__2fa sidebar__2fa--ok"
+               title="Verificação em duas etapas ativa — clique para gerenciar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    <polyline points="9 12 11 14 15 10"/>
+                </svg>
+                <span>2FA Ativo</span>
+            </a>
+            {% elif current_user.precisa_configurar_2fa %}
+            <a href="{{ url_for('auth.dois_fatores_configurar') }}"
+               class="sidebar__2fa sidebar__2fa--warn"
+               title="Configure verificação em duas etapas">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    <line x1="12" y1="8" x2="12" y2="13"/>
+                    <circle cx="12" cy="16" r="0.6" fill="currentColor"/>
+                </svg>
+                <span>Configurar 2FA</span>
+            </a>
+            {% endif %}
             <div class="sidebar__version">Topshop · v7.0</div>
             {% endif %}
         </div>
