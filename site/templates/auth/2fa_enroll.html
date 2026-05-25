@@ -10,35 +10,56 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
     <style nonce="{{ csp_nonce() }}">
+        /* Card 2FA — escopo isolado, fluido, comporta QR/secret de qualquer
+           tamanho sem estourar. box-sizing global garante que borders e
+           paddings nunca somam à largura. */
+        .enroll-card,
+        .enroll-card * { box-sizing: border-box; }
+        .enroll-card {
+            width: 100%;
+            max-width: 420px;
+            min-width: 0;
+        }
+        .enroll-card > * { max-width: 100%; min-width: 0; }
+
         .qr-wrap {
             display: flex;
             justify-content: center;
-            margin: 1rem 0;
+            margin: 16px 0;
         }
-        .qr-wrap img {
-            border: 8px solid #fff;
+        .qr-frame {
+            width: clamp(120px, 45%, 160px);
+            aspect-ratio: 1 / 1;
+            padding: 6px;
+            background: #fff;
             border-radius: 8px;
             box-shadow: 0 2px 12px rgba(0,0,0,0.12);
-            max-width: 220px;
-            height: auto;
         }
+        .qr-frame img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            border-radius: 4px;
+        }
+
         .secret-box {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 14px;
+            font-size: 13px;
             background: var(--surface-2, #f4f4f5);
             padding: 10px 12px;
             border-radius: 6px;
             border: 1px solid var(--border, #e4e4e7);
-            word-break: break-all;
+            overflow-wrap: anywhere;
             user-select: all;
             text-align: center;
             letter-spacing: 1px;
         }
-        .steps li { margin-bottom: 8px; }
+        .steps { padding-left: 1.2em; }
+        .steps li { margin-bottom: 6px; }
     </style>
 </head>
 <body class="auth-body">
-    <div class="auth-card" style="max-width: 500px;">
+    <div class="auth-card enroll-card">
         <div class="auth-card__brand">
             <div class="auth-card__mark">T</div>
             <div>
@@ -65,8 +86,10 @@
         </ol>
 
         <div class="qr-wrap">
-            <img alt="QR Code para configurar 2FA"
-                 src="data:image/png;base64,{{ qr_b64 }}">
+            <div class="qr-frame">
+                <img alt="QR Code para configurar 2FA"
+                     src="data:image/png;base64,{{ qr_b64 }}">
+            </div>
         </div>
 
         <p class="card__hint" style="text-align:center;">
