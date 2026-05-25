@@ -10,7 +10,15 @@ Componentes:
     - bootstrap_master : criação CLI do usuário admin inicial
 """
 
-from .models import db, Usuario, Convite, EventoAuth, TokenReset
+from .models import (
+    db,
+    Usuario,
+    Convite,
+    EventoAuth,
+    TokenReset,
+    CodigoBackup2FA,
+    DesafioDoisFatores,
+)
 from .security import (
     hash_senha,
     verificar_senha,
@@ -23,7 +31,16 @@ from .security import (
 from .routes import auth_bp
 from .admin_routes import admin_bp
 from .config_routes import config_bp
-from .forms import LoginForm, RegistroForm, PerfilForm, NovoConviteForm
+from .forms import (
+    LoginForm,
+    RegistroForm,
+    PerfilForm,
+    NovoConviteForm,
+    CodigoOtpForm,
+    ConfirmarEnrollment2FAForm,
+    Desabilitar2FAForm,
+    RegenerarBackupCodesForm,
+)
 
 __all__ = [
     "db",
@@ -31,6 +48,8 @@ __all__ = [
     "Convite",
     "EventoAuth",
     "TokenReset",
+    "CodigoBackup2FA",
+    "DesafioDoisFatores",
     "hash_senha",
     "verificar_senha",
     "gerar_token_url_safe",
@@ -45,4 +64,8 @@ __all__ = [
     "RegistroForm",
     "PerfilForm",
     "NovoConviteForm",
+    "CodigoOtpForm",
+    "ConfirmarEnrollment2FAForm",
+    "Desabilitar2FAForm",
+    "RegenerarBackupCodesForm",
 ]

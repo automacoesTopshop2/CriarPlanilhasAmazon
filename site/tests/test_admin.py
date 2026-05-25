@@ -93,7 +93,7 @@ class TestConvites:
             u = Usuario(
                 email="adm@topshop.com.br", nome="Adm",
                 senha_hash=hash_senha("SenhaForte123!"),
-                papel="admin", ativo=True,
+                papel="admin", ativo=True, totp_required=False,
             )
             db.session.add(u)
             db.session.commit()
@@ -139,6 +139,7 @@ class TestPromocao:
                 senha_hash=hash_senha("SenhaForte1234"),
                 papel="admin",
                 ativo=True,
+                totp_required=False,
             )
             db.session.add(outro)
             db.session.commit()
@@ -182,7 +183,7 @@ class TestDesativacao:
             outro = Usuario(
                 email="adm2@topshop.com.br", nome="Adm2",
                 senha_hash=hash_senha("SenhaForte1234"),
-                papel="admin", ativo=True,
+                papel="admin", ativo=True, totp_required=False,
             )
             db.session.add(outro)
             db.session.commit()

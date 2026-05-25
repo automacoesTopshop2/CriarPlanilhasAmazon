@@ -67,6 +67,7 @@ class TestCSRF:
                 senha_hash=hash_senha("SenhaForte1234"),
                 papel="admin",
                 ativo=True,
+                totp_required=False,
             )
             db.session.add(u)
             db.session.commit()
@@ -112,6 +113,7 @@ class TestXSS:
                 senha_hash=hash_senha("SenhaForte1234"),
                 papel="usuario",
                 ativo=True,
+                totp_required=False,
             )
             db.session.add(u)
             db.session.commit()

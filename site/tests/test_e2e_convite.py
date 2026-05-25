@@ -77,6 +77,7 @@ def main() -> int:
             senha_hash=hash_senha("SenhaForte123!"),
             papel="admin",
             ativo=True,
+            totp_required=False,
         )
         db.session.add(admin)
         db.session.commit()

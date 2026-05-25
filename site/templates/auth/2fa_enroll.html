@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Configurar 2FA · Topshop Amazon System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    <style nonce="{{ csp_nonce() }}">
+        /* Card 2FA — escopo isolado, fluido, comporta QR/secret de qualquer
+           tamanho sem estourar. box-sizing global garante que borders e
+           paddings nunca somam à largura. */
+        .enroll-card,
+        .enroll-card * { box-sizing: border-box; }
+        .enroll-card {
+            width: 100%;
+            max-width: 420px;
+            min-width: 0;
+        }
+        .enroll-card > * { max-width: 100%; min-width: 0; }
+
+        .qr-wrap {
+            display: flex;
+            justify-content: center;
+            margin: 16px 0;
+        }
+        .qr-frame {
+            width: clamp(120px, 45%, 160px);
+            aspect-ratio: 1 / 1;
+            padding: 6px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+        }
+        .qr-frame img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            border-radius: 4px;
+        }
+
+        .secret-box {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            background: var(--surface-2, #f4f4f5);
+            padding: 10px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border, #e4e4e7);
+            overflow-wrap: anywhere;
+            user-select: all;
+            text-align: center;
+            letter-spacing: 1px;
+        }
+        .steps { padding-left: 1.2em; }
+        .steps li { margin-bottom: 6px; }
+    </style>
+</head>
+<body class="auth-body">
+    <div class="auth-card enroll-card">
+        <div class="auth-card__brand">
+            <div class="auth-card__mark">T</div>
+            <div>
+                <div class="auth-card__name">Topshop Amazon</div>
+                <div class="auth-card__sub">System</div>
+            </div>
+        </div>
+
+        <h1 class="auth-card__title">Configurar verificação em duas etapas</h1>
+        <p class="auth-card__lead">
+            Proteja sua conta exigindo um código gerado por app
+            (Google Authenticator, Authy, 1Password, Microsoft Authenticator).
+        </p>
+
+        {% if fatal %}
+            <div class="alert alert--danger">{{ erro }}</div>
+            <p><a href="{{ url_for('auth.login') }}" class="btn btn--ghost btn--block">Voltar ao login</a></p>
+        {% else %}
+
+        <ol class="steps">
+            <li>Instale um app autenticador no seu celular (se ainda não tiver).</li>
+            <li>Escaneie o QR Code abaixo, ou insira o código manualmente.</li>
+            <li>Digite o código de 6 dígitos que o app gerar.</li>
+        </ol>
+
+        <div class="qr-wrap">
+            <div class="qr-frame">
+                <img alt="QR Code para configurar 2FA"
+                     src="data:image/png;base64,{{ qr_b64 }}">
+            </div>
+        </div>
+
+        <p class="card__hint" style="text-align:center;">
+            Não consegue escanear? Insira este código no app:
+        </p>
+        <div class="secret-box">{{ secret }}</div>
+
+        {% if erro %}
+        <div class="alert alert--danger" style="margin-top: 1rem;">{{ erro }}</div>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('auth.dois_fatores_configurar') }}" novalidate style="margin-top: 1.25rem;">
+            {{ form.hidden_tag() }}
+            {% if temp_token %}<input type="hidden" name="t" value="{{ temp_token }}">{% endif %}
+            {% if proximo %}<input type="hidden" name="next" value="{{ proximo }}">{% endif %}
+
+            <label class="field">
+                <span class="field__label">Código do app</span>
+                {{ form.codigo(
+                    class_="field__input",
+                    inputmode="numeric",
+                    autocomplete="one-time-code",
+                    autofocus=True,
+                    maxlength="6",
+                    placeholder="000000",
+                    style="font-family: 'JetBrains Mono', monospace; font-size: 22px; letter-spacing: 6px; text-align: center;"
+                ) }}
+                {% for e in form.codigo.errors %}<span class="field__error">{{ e }}</span>{% endfor %}
+            </label>
+
+            <button type="submit" class="btn btn--primary btn--lg btn--block">Ativar 2FA</button>
+        </form>
+
+        <p class="auth-card__hint">
+            Após ativar, você receberá <strong>10 códigos de backup</strong>
+            para usar caso perca o acesso ao app. Guarde-os em local seguro.
+        </p>
+        {% endif %}
+    </div>
+</body>
+</html>

@@ -364,6 +364,20 @@ def create_app(config_overrides: Optional[Dict[str, Any]] = None) -> Flask:
     limiter.limit("10 per hour", methods=["POST"])(
         app.view_functions["auth.reset"]
     )
+    # 2FA: limite por IP — fora isso o desafio em si trava após
+    # MAX_TENTATIVAS falhas (definido em totp_challenge.py).
+    limiter.limit("10 per minute", methods=["POST"])(
+        app.view_functions["auth.login_verificar_2fa"]
+    )
+    limiter.limit("10 per hour", methods=["POST"])(
+        app.view_functions["auth.dois_fatores_configurar"]
+    )
+    limiter.limit("5 per hour", methods=["POST"])(
+        app.view_functions["auth.dois_fatores_desabilitar"]
+    )
+    limiter.limit("5 per hour", methods=["POST"])(
+        app.view_functions["auth.dois_fatores_regenerar_backup"]
+    )
 
     # ---- Rotas da aplicação ----
     _registrar_rotas_app(app, cfg)
