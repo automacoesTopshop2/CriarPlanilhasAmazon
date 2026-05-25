@@ -18,6 +18,8 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
+    SmallInteger,
     String,
     Text,
 )
@@ -59,11 +61,34 @@ class Usuario(UserMixin, db.Model):
         String(64), unique=True, nullable=True, index=True
     )
 
+    # ---- 2FA TOTP ----
+    # secret ativo: Fernet-encrypted. Decrypt só na verificação.
+    totp_secret_encrypted: Mapped[Optional[bytes]] = mapped_column(
+        LargeBinary, nullable=True
+    )
+    # secret em enrollment (ainda não confirmado pelo usuário).
+    totp_secret_pending_encrypted: Mapped[Optional[bytes]] = mapped_column(
+        LargeBinary, nullable=True
+    )
+    totp_pending_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    totp_enrolled_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Se true, usuário é obrigado a configurar 2FA no próximo login.
+    totp_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
     # ---- helpers ----
 
     @property
     def is_admin(self) -> bool:
         return self.papel == "admin"
+
+    @property
+    def precisa_configurar_2fa(self) -> bool:
+        return bool(self.totp_required) and not bool(self.totp_enabled)
 
     @property
     def esta_bloqueado(self) -> bool:
@@ -145,6 +170,65 @@ class TokenReset(db.Model):
     @property
     def esta_valido(self) -> bool:
         return self.usado_em is None and not self.esta_expirado
+
+
+# =============================================================================
+# Códigos de backup 2FA (single-use, hashed)
+# =============================================================================
+class CodigoBackup2FA(db.Model):
+    __tablename__ = "codigos_backup_2fa"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    usuario_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    codigo_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    usado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    usuario = relationship("Usuario")
+
+    @property
+    def disponivel(self) -> bool:
+        return self.usado_em is None
+
+
+# =============================================================================
+# Desafio 2FA — state do temp_token emitido pelo /login
+# =============================================================================
+class DesafioDoisFatores(db.Model):
+    __tablename__ = "desafios_2fa"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
+    usuario_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # 'verificacao' (já enrolled, só precisa do código) ou
+    # 'enrollment' (precisa configurar 2FA antes de logar).
+    proposito: Mapped[str] = mapped_column(String(20), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumido_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    tentativas_falhas: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+    # "lembrar-me" originalmente solicitado no /login; carregado para o
+    # login_user() final quando o código for verificado.
+    lembrar: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    usuario = relationship("Usuario")
+
+    @property
+    def esta_expirado(self) -> bool:
+        agora = _utcnow()
+        exp = self.expira_em
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        return exp <= agora
+
+    @property
+    def esta_valido(self) -> bool:
+        return self.consumido_em is None and not self.esta_expirado
 
 
 # =============================================================================

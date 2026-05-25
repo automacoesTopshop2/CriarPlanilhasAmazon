@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Segurança · Topshop Amazon System{% endblock %}
+
+{% block breadcrumb %}
+<span class="topbar__crumb">Sistema</span>
+<span class="topbar__chev">/</span>
+<a href="{{ url_for('auth.perfil') }}" class="topbar__crumb">Perfil</a>
+<span class="topbar__chev">/</span>
+<span class="topbar__crumb topbar__crumb--current">Segurança</span>
+{% endblock %}
+
+{% block content %}
+<div class="card card--narrow">
+    <h1 class="card__title">Segurança da conta</h1>
+    <p class="card__lead">{{ current_user.email }}</p>
+
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+        {% for cat, m in msgs %}
+            <div class="alert alert--{{ 'success' if cat == 'ok' else 'danger' }}">{{ m }}</div>
+        {% endfor %}
+    {% endwith %}
+
+    <h3 class="card__section-title">Verificação em duas etapas (2FA)</h3>
+
+    {% if current_user.totp_enabled %}
+        <p>
+            <span class="badge badge--success">Ativo</span>
+            {% if current_user.totp_enrolled_at %}
+                desde {{ current_user.totp_enrolled_at.strftime('%d/%m/%Y') }}
+            {% endif %}
+        </p>
+        <p class="card__hint">
+            Códigos de backup restantes:
+            <strong>{{ backup_restantes }}</strong>
+            {% if backup_restantes <= 3 %}
+                — recomendamos regenerar.
+            {% endif %}
+        </p>
+
+        <details style="margin-top: 1rem;">
+            <summary style="cursor: pointer; font-weight: 600;">Regenerar códigos de backup</summary>
+            <p class="card__hint" style="margin-top: 0.5rem;">
+                Os códigos antigos serão invalidados. Use seu app autenticador
+                para confirmar.
+            </p>
+            <form method="POST" action="{{ url_for('auth.dois_fatores_regenerar_backup') }}" novalidate>
+                {{ regen_form.hidden_tag() }}
+                <label class="field">
+                    <span class="field__label">Código 2FA atual</span>
+                    {{ regen_form.codigo(
+                        class_="field__input",
+                        inputmode="numeric",
+                        autocomplete="one-time-code",
+                        placeholder="000000",
+                        maxlength="32"
+                    ) }}
+                </label>
+                <button type="submit" class="btn btn--ghost">Regenerar 10 novos códigos</button>
+            </form>
+        </details>
+
+        {% if not current_user.totp_required %}
+        <details style="margin-top: 1rem;">
+            <summary style="cursor: pointer; font-weight: 600; color: var(--danger);">Desativar 2FA</summary>
+            <p class="card__hint" style="margin-top: 0.5rem;">
+                Confirme com sua senha e código 2FA. Sua conta ficará menos
+                protegida — só desative se for absolutamente necessário.
+            </p>
+            <form method="POST" action="{{ url_for('auth.dois_fatores_desabilitar') }}" novalidate>
+                {{ disable_form.hidden_tag() }}
+                <label class="field">
+                    <span class="field__label">Senha</span>
+                    {{ disable_form.senha(class_="field__input", autocomplete="current-password") }}
+                </label>
+                <label class="field">
+                    <span class="field__label">Código 2FA</span>
+                    {{ disable_form.codigo(class_="field__input", inputmode="numeric",
+                                            autocomplete="one-time-code",
+                                            placeholder="000000", maxlength="32") }}
+                </label>
+                <button type="submit" class="btn btn--danger">Desativar 2FA</button>
+            </form>
+        </details>
+        {% else %}
+        <p class="card__hint" style="margin-top: 1rem;">
+            🔒 2FA é obrigatório para este usuário e não pode ser desativado.
+        </p>
+        {% endif %}
+
+    {% else %}
+        <p>
+            <span class="badge badge--warn">Não configurado</span>
+        </p>
+        <p class="card__hint">
+            Adicione uma camada extra de proteção à sua conta com um app
+            autenticador (Google Authenticator, Authy, 1Password).
+        </p>
+        <a href="{{ url_for('auth.dois_fatores_configurar') }}" class="btn btn--primary">
+            Configurar 2FA agora
+        </a>
+    {% endif %}
+</div>
+{% endblock %}

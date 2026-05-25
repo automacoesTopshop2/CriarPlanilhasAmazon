@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Códigos de backup · Topshop Amazon System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    <style nonce="{{ csp_nonce() }}">
+        .codes {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 1rem 0;
+        }
+        .codes code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            background: var(--surface-2, #f4f4f5);
+            padding: 10px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border, #e4e4e7);
+            text-align: center;
+            letter-spacing: 1px;
+            user-select: all;
+        }
+        .ack {
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+            margin: 1rem 0;
+        }
+    </style>
+</head>
+<body class="auth-body">
+    <div class="auth-card" style="max-width: 520px;">
+        <div class="auth-card__brand">
+            <div class="auth-card__mark">T</div>
+            <div>
+                <div class="auth-card__name">Topshop Amazon</div>
+                <div class="auth-card__sub">System</div>
+            </div>
+        </div>
+
+        <h1 class="auth-card__title">Seus códigos de backup</h1>
+        <p class="auth-card__lead">
+            Use estes códigos se perder o acesso ao app autenticador.
+            <strong>Cada código funciona uma única vez.</strong>
+            <br>
+            <strong>Esta é a única vez que você verá os códigos.</strong>
+            Guarde-os em local seguro (gerenciador de senhas, cofre, etc.).
+        </p>
+
+        <div class="codes">
+            {% for c in codigos %}<code>{{ c }}</code>{% endfor %}
+        </div>
+
+        <div style="display: flex; gap: 8px;">
+            <button type="button" id="btn-copiar" class="btn btn--ghost">Copiar todos</button>
+            <button type="button" id="btn-baixar" class="btn btn--ghost">Baixar .txt</button>
+        </div>
+
+        <label class="ack">
+            <input type="checkbox" id="ack-guardei">
+            <span>Salvei meus códigos em local seguro.</span>
+        </label>
+
+        <a id="btn-concluir"
+           href="{{ proximo }}"
+           class="btn btn--primary btn--lg btn--block"
+           aria-disabled="true"
+           style="pointer-events: none; opacity: 0.5;">
+            Concluir
+        </a>
+
+        <script nonce="{{ csp_nonce() }}">
+            (function () {
+                var codigos = {{ codigos | tojson }};
+                var ack = document.getElementById('ack-guardei');
+                var btn = document.getElementById('btn-concluir');
+                var copiar = document.getElementById('btn-copiar');
+                var baixar = document.getElementById('btn-baixar');
+
+                ack.addEventListener('change', function () {
+                    if (ack.checked) {
+                        btn.style.pointerEvents = '';
+                        btn.style.opacity = '';
+                        btn.removeAttribute('aria-disabled');
+                    } else {
+                        btn.style.pointerEvents = 'none';
+                        btn.style.opacity = '0.5';
+                        btn.setAttribute('aria-disabled', 'true');
+                    }
+                });
+
+                copiar.addEventListener('click', function () {
+                    navigator.clipboard.writeText(codigos.join('\n')).then(function () {
+                        copiar.textContent = 'Copiado!';
+                        setTimeout(function () { copiar.textContent = 'Copiar todos'; }, 1500);
+                    });
+                });
+
+                baixar.addEventListener('click', function () {
+                    var blob = new Blob(
+                        ['Codigos de backup 2FA — TopShop Amazon System\n\n' + codigos.join('\n') + '\n'],
+                        { type: 'text/plain;charset=utf-8' }
+                    );
+                    var url = URL.createObjectURL(blob);
+                    var a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'topshop-backup-codes.txt';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                });
+            })();
+        </script>
+    </div>
+</body>
+</html>

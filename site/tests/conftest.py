@@ -30,6 +30,15 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["SECRET_KEY"] = "test-secret-key-32bytes-fixed-aaa"
 os.environ["ENV"] = "development"
 os.environ["SESSION_COOKIE_SECURE"] = "0"
+# Chave Fernet fixa para testes (válida — gerada uma vez e
+# congelada aqui para reprodutibilidade). NUNCA usar em produção.
+os.environ.setdefault(
+    "TOTP_ENCRYPTION_KEY",
+    "ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Pg=",
+)
+os.environ.setdefault("TOTP_ISSUER", "TopShopTest")
+os.environ.setdefault("TOTP_VALID_WINDOW", "1")
+os.environ.setdefault("TOTP_CHALLENGE_TTL_SECONDS", "300")
 
 from auth import db, Usuario  # noqa: E402
 from auth.security import hash_senha  # noqa: E402
@@ -94,7 +103,7 @@ def client(app):
 
 @pytest.fixture
 def admin(app):
-    """Cria um admin para os testes."""
+    """Cria um admin para os testes. 2FA não exigido (testes legados)."""
     with app.app_context():
         u = Usuario(
             email="admin@topshop.com.br",
@@ -102,6 +111,7 @@ def admin(app):
             senha_hash=hash_senha("SenhaForte123!"),
             papel="admin",
             ativo=True,
+            totp_required=False,
         )
         db.session.add(u)
         db.session.commit()
@@ -110,7 +120,7 @@ def admin(app):
 
 @pytest.fixture
 def usuario(app):
-    """Cria um usuário comum."""
+    """Cria um usuário comum sem 2FA (caso default dos testes legados)."""
     with app.app_context():
         u = Usuario(
             email="user@topshop.com.br",
@@ -118,10 +128,33 @@ def usuario(app):
             senha_hash=hash_senha("SenhaForte456@"),
             papel="usuario",
             ativo=True,
+            totp_required=False,
         )
         db.session.add(u)
         db.session.commit()
         return u.id
+
+
+@pytest.fixture
+def usuario_2fa(app):
+    """Usuário com 2FA habilitado (secret base32 fixo p/ reprodutibilidade)."""
+    from auth.totp_crypto import encrypt_totp_secret
+    secret = "JBSWY3DPEHPK3PXP"  # base32 conhecido; pyotp gera códigos válidos a partir dele
+    with app.app_context():
+        u = Usuario(
+            email="2fa@topshop.com.br",
+            nome="Usuario 2FA",
+            senha_hash=hash_senha("Senha2faForte123"),
+            papel="usuario",
+            ativo=True,
+            totp_required=True,
+            totp_enabled=True,
+            totp_secret_encrypted=encrypt_totp_secret(secret),
+        )
+        db.session.add(u)
+        db.session.commit()
+        return {"id": u.id, "secret": secret, "senha": "Senha2faForte123",
+                "email": "2fa@topshop.com.br"}
 
 
 @pytest.fixture
@@ -191,6 +224,7 @@ def app_with_ratelimit(_isolar_app_config):
             senha_hash=hash_senha("SenhaForte123!"),
             papel="usuario",
             ativo=True,
+            totp_required=False,
         )
         db.session.add(u)
         db.session.commit()

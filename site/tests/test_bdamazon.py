@@ -100,7 +100,7 @@ def _criar_usuario_sem_codigo_externo(app):
             email="semcodigo@topshop.com.br",
             nome="Sem Codigo",
             senha_hash=hash_senha("SenhaForte123!"),
-            papel="usuario", ativo=True,
+            papel="usuario", ativo=True, totp_required=False,
         )
         db.session.add(u); db.session.commit()
         return u.id
@@ -114,6 +114,7 @@ def _criar_usuario_com_codigo_externo(app, codigo="joao.silva"):
             senha_hash=hash_senha("SenhaForte123!"),
             papel="usuario",
             ativo=True,
+            totp_required=False,
             codigo_externo=codigo,
         )
         db.session.add(u)
@@ -250,7 +251,7 @@ def test_admin_rejeita_codigo_externo_duplicado(client, app, login_admin, usuari
             email="outro@topshop.com.br",
             nome="Outro",
             senha_hash=hash_senha("SenhaForte123!"),
-            papel="usuario", ativo=True,
+            papel="usuario", ativo=True, totp_required=False,
             codigo_externo="ja-existe",
         )
         db.session.add(outro)
