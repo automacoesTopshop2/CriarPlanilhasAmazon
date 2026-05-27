@@ -1,0 +1,60 @@
+# ==============================================================================
+# .railwayignore — controla o que sobe no `railway up` (sintaxe igual .gitignore)
+# Mantém secrets, credenciais, dados de runtime e artefatos pesados FORA do upload.
+# ==============================================================================
+
+# Git / ferramentas / IDE
+.git
+.github
+.claude
+.vscode
+.idea
+*.swp
+
+# Caches / venv / build
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+venv/
+.venv/
+env/
+build/
+dist/
+*.spec
+exec/build/
+exec/dist/
+
+# Secrets e credenciais — NUNCA subir
+.env
+*.env.local
+cookie.txt
+site/cookie.txt
+_prodtest_2fa.py
+_smoketest_2fa.py
+
+# Banco local / dados de runtime (vivem no Volume, não na imagem)
+*.db
+*.db-journal
+site/instance/
+_data/
+app_config.json
+
+# Bases / planilhas reais (dados sensíveis — vão para o Volume)
+Precificacao.xlsx
+Precificação.xlsx
+DESCRIÇÃO.xlsx
+DESCRICAO.xlsx
+CriarASIN.xlsx
+CriarSKU.xlsx
+~$*
+
+# Projetos Next.js obsoletos (sem código-fonte; só build/node_modules pesados)
+web/
+BasearInterface/
+node_modules/
+
+# Templates pesados não usados no runtime web
+Templates de Criação/
