@@ -1280,6 +1280,15 @@ html { scroll-behavior: smooth; }
 }
 .tbl-manual__del:hover { background: var(--danger-soft); }
 
+/* Badge de risco do catálogo (status_produto) na coluna SKU Market */
+.status-produto { font-size: 11px; }
+.status-produto--none {
+    color: var(--text-muted);
+    font-style: italic;
+    display: block;
+    margin-top: 4px;
+}
+
 .manual-actions {
     display: flex;
     gap: var(--space-3);

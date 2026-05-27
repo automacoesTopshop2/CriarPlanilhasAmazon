@@ -710,6 +710,24 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
             return jsonify({"sucesso": False,
                             "mensagem": "Falha ao criar SKU no BDAmazon.",
                             "detalhe": str(e)}), 502
+
+        # O POST /skus não devolve a classificação de sensibilidade do
+        # catálogo; só o GET /skus/{sku_market} traz `status_produto`. Fazemos
+        # um GET best-effort logo após criar para já mostrar o badge de risco
+        # (LIVRE/SENSIVEL/PROIBIDO) na linha. Falha aqui não invalida a
+        # criação — devolvemos status_produto=None e o front mostra "—".
+        status_produto = titulo_produto = estoque_produto = None
+        try:
+            detalhe = bdamazon_client.consultar_sku(criado.sku_market)
+            if detalhe is not None:
+                status_produto = detalhe.status_produto
+                titulo_produto = detalhe.titulo_produto
+                estoque_produto = detalhe.estoque_produto
+        except bdamazon_client.BDAmazonError as e:
+            app.logger.warning(
+                "SKU %s criado, mas falha ao consultar status_produto: %s",
+                criado.sku_market, e,
+            )
         return jsonify({
             "sucesso": True,
             "sku_market": criado.sku_market,
@@ -718,6 +736,64 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
             "conta_codigo": criado.conta_codigo,
             "conta_nome": criado.conta_nome,
             "criado_em": criado.criado_em,
+            "status_produto": status_produto,
+            "titulo_produto": titulo_produto,
+            "estoque_produto": estoque_produto,
+        })
+
+    # --------------------------- API: consultar 1 SKU no BDAmazon ---------------
+    @app.route("/api/bdamazon/consultar-sku/<sku_market>")
+    @login_required
+    def api_bdamazon_consultar_sku(sku_market):
+        """Proxy para GET /api/v1/skus/{sku_market} do BDAmazon.
+
+        Devolve os dados do SKU + a classificação de sensibilidade do catálogo
+        interno (`status_produto`: LIVRE/SENSIVEL/PROIBIDO/INATIVO/None), para a
+        UI mostrar o badge de risco ao buscar um SKU-Market já existente.
+        """
+        if not (os.getenv("BDAMAZON_API_KEY") or "").strip():
+            return jsonify({
+                "sucesso": False,
+                "mensagem": "BDAMAZON_API_KEY não configurada no servidor.",
+                "detalhe": "env var BDAMAZON_API_KEY ausente",
+            }), 503
+        sku_market = (sku_market or "").strip()
+        if not sku_market:
+            return jsonify({"sucesso": False,
+                            "mensagem": "sku_market é obrigatório."}), 400
+        try:
+            sku = bdamazon_client.consultar_sku(sku_market)
+        except bdamazon_client.BDAmazonAuthError as e:
+            return jsonify({"sucesso": False,
+                            "mensagem": "BDAmazon recusou a autenticação.",
+                            "detalhe": str(e)}), 502
+        except bdamazon_client.BDAmazonRateLimitError as e:
+            return jsonify({"sucesso": False,
+                            "mensagem": "Rate-limit do BDAmazon. Aguarde alguns segundos.",
+                            "detalhe": str(e)}), 429
+        except bdamazon_client.BDAmazonError as e:
+            app.logger.error("Falha no BDAmazon GET /skus/%s: %s", sku_market, e)
+            return jsonify({"sucesso": False,
+                            "mensagem": "Não consegui consultar o SKU no BDAmazon.",
+                            "detalhe": str(e)}), 502
+        if sku is None:
+            return jsonify({"sucesso": False,
+                            "mensagem": f"SKU-Market '{sku_market}' não encontrado."}), 404
+        return jsonify({
+            "sucesso": True,
+            "sku_market": sku.sku_market,
+            "sku_raiz": sku.sku_raiz,
+            "versao": sku.versao,
+            "conta_codigo": sku.conta_codigo,
+            "conta_nome": sku.conta_nome,
+            "asin": sku.asin,
+            "ean": sku.ean,
+            "titulo": sku.titulo,
+            "criado_em": sku.criado_em,
+            "criado_por": sku.criado_por,
+            "status_produto": sku.status_produto,
+            "titulo_produto": sku.titulo_produto,
+            "estoque_produto": sku.estoque_produto,
         })
 
     # --------------------------- API: SKU manual via API BDAmazon ---------------

@@ -328,7 +328,17 @@ def test_criar_sku_devolve_sku_market(client, app, monkeypatch):
         chamadas.append(kwargs)
         return sku_fake
 
-    with patch("core.bdamazon_client.criar_sku", side_effect=fake):
+    # Após criar, a rota faz um GET best-effort para puxar o status do catálogo.
+    detalhe_fake = bdamazon_client.SkuCriado(
+        sku_market="BOX2-ABC123", sku_raiz="ABC123", versao=1,
+        conta_codigo="BOX2", conta_nome="BOX2BRASIL",
+        asin=None, titulo=None, aguardando_titulo=False,
+        criado_em="2026-05-19T14:32:11+00:00", criado_por="Joao", raw={},
+        status_produto="SENSIVEL", titulo_produto="Produto X", estoque_produto=42,
+    )
+
+    with patch("core.bdamazon_client.criar_sku", side_effect=fake), \
+         patch("core.bdamazon_client.consultar_sku", return_value=detalhe_fake):
         r = client.post("/api/bdamazon/criar-sku",
                         json={"sku_raiz": "ABC123",
                               "conta_codigo": "BOX2"})
@@ -337,6 +347,9 @@ def test_criar_sku_devolve_sku_market(client, app, monkeypatch):
     assert body["sucesso"] is True
     assert body["sku_market"] == "BOX2-ABC123"
     assert body["versao"] == 1
+    # Status de sensibilidade do catálogo vem junto na resposta de criação.
+    assert body["status_produto"] == "SENSIVEL"
+    assert body["estoque_produto"] == 42
     assert chamadas[0]["sku_raiz"] == "ABC123"
     assert chamadas[0]["conta_codigo"] == "BOX2"
     assert chamadas[0]["usuario_codigo"] == "joao.silva"
@@ -360,13 +373,126 @@ def test_criar_sku_com_asin_envia_para_api(client, app, monkeypatch):
         chamadas.append(kwargs)
         return sku_fake
 
-    with patch("core.bdamazon_client.criar_sku", side_effect=fake):
+    with patch("core.bdamazon_client.criar_sku", side_effect=fake), \
+         patch("core.bdamazon_client.consultar_sku", return_value=None):
         r = client.post("/api/bdamazon/criar-sku",
                         json={"sku_raiz": "XYZ",
                               "conta_codigo": "BOX2",
                               "asin": "B08ABCD123"})
     assert r.status_code == 200
     assert chamadas[0]["asin"] == "B08ABCD123"
+    # SKU raiz não consta no catálogo -> status_produto None (sem badge de risco).
+    assert r.get_json()["status_produto"] is None
+
+
+def test_criar_sku_status_consulta_falha_nao_quebra_criacao(client, app, monkeypatch):
+    """Se o GET de status falhar, a criação ainda devolve 200 (best-effort)."""
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
+    _criar_usuario_com_codigo_externo(app, codigo="op-bestv")
+    _login(client, "op@topshop.com.br", "SenhaForte123!")
+
+    sku_fake = bdamazon_client.SkuCriado(
+        sku_market="BOX2-ABC123", sku_raiz="ABC123", versao=1,
+        conta_codigo="BOX2", conta_nome="BOX2BRASIL",
+        asin=None, titulo=None, aguardando_titulo=False,
+        criado_em="2026-05-19T14:32:11+00:00", criado_por="Joao", raw={},
+    )
+    consulta_erro = bdamazon_client.BDAmazonError("timeout", status=502)
+    with patch("core.bdamazon_client.criar_sku", return_value=sku_fake), \
+         patch("core.bdamazon_client.consultar_sku", side_effect=consulta_erro):
+        r = client.post("/api/bdamazon/criar-sku",
+                        json={"sku_raiz": "ABC123", "conta_codigo": "BOX2"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = r.get_json()
+    assert body["sucesso"] is True
+    assert body["sku_market"] == "BOX2-ABC123"
+    assert body["status_produto"] is None
+
+
+# ---------------------------------------------------------------------------
+# /api/bdamazon/consultar-sku/<sku_market>  (busca + status do catálogo)
+# ---------------------------------------------------------------------------
+
+def test_consultar_sku_devolve_status_produto(client, app, monkeypatch):
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
+    _criar_usuario_com_codigo_externo(app, codigo="op-cons")
+    _login(client, "op@topshop.com.br", "SenhaForte123!")
+
+    sku_fake = bdamazon_client.SkuCriado(
+        sku_market="BOX2-ABC123", sku_raiz="ABC123", versao=1,
+        conta_codigo="BOX2", conta_nome="BOX2BRASIL",
+        asin="B0AAAAAAAA", titulo="Produto exemplo", aguardando_titulo=False,
+        criado_em="2026-05-19T14:32:11+00:00", criado_por="Joao", raw={},
+        ean="7891234567890", status_produto="PROIBIDO",
+        titulo_produto="Produto exemplo - catálogo", estoque_produto=0,
+    )
+
+    chamadas = []
+    def fake(sku_market):
+        chamadas.append(sku_market)
+        return sku_fake
+
+    with patch("core.bdamazon_client.consultar_sku", side_effect=fake):
+        r = client.get("/api/bdamazon/consultar-sku/BOX2-ABC123")
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = r.get_json()
+    assert body["sucesso"] is True
+    assert body["sku_market"] == "BOX2-ABC123"
+    assert body["status_produto"] == "PROIBIDO"
+    assert body["ean"] == "7891234567890"
+    assert body["estoque_produto"] == 0
+    assert chamadas == ["BOX2-ABC123"]
+
+
+def test_consultar_sku_inexistente_404(client, app, monkeypatch):
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
+    _criar_usuario_com_codigo_externo(app, codigo="op-404")
+    _login(client, "op@topshop.com.br", "SenhaForte123!")
+    with patch("core.bdamazon_client.consultar_sku", return_value=None):
+        r = client.get("/api/bdamazon/consultar-sku/BOX2-NAOEXISTE")
+    assert r.status_code == 404
+    assert "não encontrado" in r.get_json()["mensagem"].lower()
+
+
+def test_consultar_sku_sem_api_key_503(client, app, monkeypatch):
+    monkeypatch.delenv("BDAMAZON_API_KEY", raising=False)
+    _criar_usuario_com_codigo_externo(app, codigo="op-503c")
+    _login(client, "op@topshop.com.br", "SenhaForte123!")
+    r = client.get("/api/bdamazon/consultar-sku/BOX2-ABC123")
+    assert r.status_code == 503
+    assert "BDAMAZON_API_KEY" in r.get_json()["mensagem"]
+
+
+def test_consultar_sku_exige_login(client):
+    r = client.get("/api/bdamazon/consultar-sku/BOX2-ABC123")
+    assert r.status_code == 401
+
+
+def test_consultar_sku_propaga_429(client, app, monkeypatch):
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
+    _criar_usuario_com_codigo_externo(app, codigo="op-429c")
+    _login(client, "op@topshop.com.br", "SenhaForte123!")
+    err = bdamazon_client.BDAmazonRateLimitError("rate-limit", status=429)
+    with patch("core.bdamazon_client.consultar_sku", side_effect=err):
+        r = client.get("/api/bdamazon/consultar-sku/BOX2-ABC123")
+    assert r.status_code == 429
+
+
+def test_skucriado_from_dict_parseia_status_produto():
+    """O cliente preserva status_produto/ean/estoque vindos do GET /skus."""
+    d = {
+        "sku_market": "BOX2-ABC123", "sku_raiz": "ABC123", "versao": 1,
+        "conta_codigo": "BOX2", "conta_nome": "BOX2BRASIL",
+        "asin": "B0AAAAAAAA", "ean": "7891234567890", "titulo": "X",
+        "aguardando_titulo": False, "criado_em": "2026-05-19T14:32:11+00:00",
+        "criado_por": "Joao", "status_produto": "LIVRE",
+        "titulo_produto": "X catálogo", "estoque_produto": 150,
+    }
+    sku = bdamazon_client.SkuCriado.from_dict(d)
+    assert sku.status_produto == "LIVRE"
+    assert sku.ean == "7891234567890"
+    assert sku.estoque_produto == 150
+    assert sku.titulo_produto == "X catálogo"
 
 
 def test_criar_sku_propaga_429(client, app, monkeypatch):

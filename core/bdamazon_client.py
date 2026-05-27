@@ -17,6 +17,7 @@ import logging
 import os
 from dataclasses import dataclass
 from typing import Any, List, Optional
+from urllib.parse import quote
 
 import requests
 
@@ -69,6 +70,11 @@ class Conta:
         )
 
 
+# Classificação de sensibilidade do produto no catálogo interno do BDAmazon.
+# Devolvida por GET /api/v1/skus/{sku_market} no campo `status_produto`.
+STATUS_PRODUTO_VALIDOS = ("LIVRE", "SENSIVEL", "PROIBIDO", "INATIVO")
+
+
 @dataclass
 class SkuCriado:
     sku_market: str
@@ -82,9 +88,21 @@ class SkuCriado:
     criado_em: str
     criado_por: str
     raw: dict
+    # Campos extras devolvidos só pelo GET /skus/{sku_market} (não pelo POST).
+    # Ficam None quando vêm da resposta de criação ou se o SKU raiz não consta
+    # no catálogo interno.
+    ean: Optional[str] = None
+    status_produto: Optional[str] = None   # LIVRE | SENSIVEL | PROIBIDO | INATIVO | None
+    titulo_produto: Optional[str] = None
+    estoque_produto: Optional[int] = None
 
     @classmethod
     def from_dict(cls, d: dict) -> "SkuCriado":
+        est = d.get("estoque_produto")
+        try:
+            estoque = int(est) if est is not None else None
+        except (TypeError, ValueError):
+            estoque = None
         return cls(
             sku_market=d.get("sku_market", ""),
             sku_raiz=d.get("sku_raiz", ""),
@@ -97,6 +115,10 @@ class SkuCriado:
             criado_em=d.get("criado_em", ""),
             criado_por=d.get("criado_por", ""),
             raw=d,
+            ean=d.get("ean"),
+            status_produto=d.get("status_produto"),
+            titulo_produto=d.get("titulo_produto"),
+            estoque_produto=estoque,
         )
 
 
@@ -228,9 +250,16 @@ def criar_sku(
 
 
 def consultar_sku(sku_market: str) -> Optional[SkuCriado]:
-    """GET /api/v1/skus/{sku_market} — None se 404."""
+    """GET /api/v1/skus/{sku_market} — None se 404.
+
+    Além dos dados do anúncio, o SkuCriado devolvido carrega a classificação
+    de sensibilidade do catálogo interno (`status_produto`: LIVRE/SENSIVEL/
+    PROIBIDO/INATIVO/None) e o estoque/título oficiais.
+    """
+    # quote(safe="") garante que o sku_market vire um único segmento de path
+    # (sem permitir '/' ou '..' escaparem para outras rotas da API).
     try:
-        data = _request("GET", f"/skus/{sku_market}")
+        data = _request("GET", f"/skus/{quote(sku_market, safe='')}")
     except BDAmazonNotFoundError:
         return None
     return SkuCriado.from_dict(data)

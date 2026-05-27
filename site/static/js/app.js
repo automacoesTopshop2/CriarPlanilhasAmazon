@@ -305,6 +305,25 @@
         }[c]));
     }
 
+    // Classificação de sensibilidade do produto no catálogo BDAmazon.
+    // Mapeia status_produto (LIVRE/SENSIVEL/PROIBIDO/INATIVO/null) -> badge.
+    const STATUS_PRODUTO_META = {
+        LIVRE:    { rotulo: 'Livre',    classe: 'badge--ok'   },
+        SENSIVEL: { rotulo: 'Sensível', classe: 'badge--warn' },
+        PROIBIDO: { rotulo: 'Proibido', classe: 'badge--off'  },
+        INATIVO:  { rotulo: 'Inativo',  classe: 'badge'       },
+    };
+
+    function statusProdutoBadge(status) {
+        if (!status) {
+            // SKU raiz não consta no catálogo interno (produto novo/não cadastrado).
+            return `<small class="status-produto status-produto--none" title="SKU raiz não consta no catálogo interno">não catalogado</small>`;
+        }
+        const meta = STATUS_PRODUTO_META[status]
+            || { rotulo: status, classe: 'badge' };
+        return `<span class="badge ${meta.classe} status-produto" title="Classificação no catálogo interno">${escape(meta.rotulo)}</span>`;
+    }
+
     // ==========================================================
     // SIDEBAR: bases
     // ==========================================================
@@ -696,15 +715,25 @@
                 }
                 tr.dataset.skuMarket = data.sku_market;
                 tr.dataset.versao = String(data.versao || 1);
+                tr.dataset.statusProduto = data.status_produto || '';
                 const cell = tr.querySelector('.cell-sku-market');
                 cell.innerHTML = `
                     <code style="font-size:12px">${escape(data.sku_market)}</code>
                     <small style="color:var(--text-muted);display:block">v${escape(String(data.versao))}</small>
+                    <span class="status-produto-wrap" style="display:block;margin-top:4px">${statusProdutoBadge(data.status_produto)}</span>
                 `;
                 tr.querySelector('[data-field="sku_raiz"]').readOnly = true;
                 tr.querySelector('[data-field="conta_codigo"]').disabled = true;
                 if (opts.comAsin) tr.querySelector('[data-field="asin"]').readOnly = true;
-                if (!silentToast) toast(`SKU-Market criado: ${data.sku_market}`, 'ok');
+                if (!silentToast) {
+                    toast(`SKU-Market criado: ${data.sku_market}`, 'ok');
+                    // Alerta de risco do catálogo: laranja p/ SENSÍVEL, vermelho p/ PROIBIDO.
+                    if (data.status_produto === 'PROIBIDO') {
+                        toast(`⛔ ${data.sku_raiz}: produto PROIBIDO no catálogo — não deveria ser anunciado.`, 'err');
+                    } else if (data.status_produto === 'SENSIVEL') {
+                        toast(`⚠️ ${data.sku_raiz}: produto SENSÍVEL — revise antes de criar o anúncio.`, 'err');
+                    }
+                }
                 atualizarBotaoProcessar();
                 return { ok: true };
             } catch (err) {
