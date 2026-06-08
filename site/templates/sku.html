@@ -78,11 +78,11 @@
                 {% include "_dropzone.html" %}
             </div>
 
-            <!-- Dropzone: template NOGORA -->
+            <!-- Template NOGORA: usar o pronto salvo ou enviar/atualizar -->
             <div class="field">
                 <span class="label">2. Modelo NOGORA (.xlsm)</span>
-                {% with id_suffix="template", accept=".xlsm", label="Solte o template Amazon", sublabel="ou clique para selecionar (.xlsm)" %}
-                    {% include "_dropzone.html" %}
+                {% with ts_field="template", ts_salvo=bases.template_sku %}
+                    {% include "_template_source.html" %}
                 {% endwith %}
             </div>
         </div>
@@ -131,8 +131,8 @@
             </div>
             <div class="field">
                 <label class="label">Template NOGORA (.xlsm)</label>
-                {% with id_suffix="template-manual", accept=".xlsm", label="Solte o template Amazon", sublabel="ou clique para selecionar (.xlsm)" %}
-                    {% include "_dropzone.html" %}
+                {% with ts_field="template-manual", ts_salvo=bases.template_sku %}
+                    {% include "_template_source.html" %}
                 {% endwith %}
             </div>
         </div>

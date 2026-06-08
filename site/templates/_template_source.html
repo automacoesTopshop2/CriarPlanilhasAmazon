@@ -1,0 +1,41 @@
+{# Seletor de origem do template NOGORA (.xlsm).
+   Permite usar o template pronto salvo no servidor (sem reenviar) ou
+   enviar/atualizar um novo. Driveado por app.js (data-role="template-source").
+   Variáveis (passe via {% with %}):
+     - ts_field: id da dropzone interna (ex.: "template" ou "template-manual")
+     - ts_salvo: dict bases.template_sku ({existe, arquivo, atualizado_em})
+#}
+{% set _f = ts_field or "template" %}
+{% set _tem = ts_salvo and ts_salvo.existe %}
+<div class="template-source" data-role="template-source" data-field="{{ _f }}"
+     data-tem-salvo="{{ '1' if _tem else '0' }}">
+
+    {% if _tem %}
+    <div class="template-source__modes" role="radiogroup" aria-label="Origem do template">
+        <label class="template-source__mode">
+            <input type="radio" name="ts-mode-{{ _f }}" value="pronto" data-role="ts-mode" checked>
+            <span class="template-source__mode-body">
+                <strong>Usar template pronto</strong>
+                <small data-role="ts-salvo-info">{{ ts_salvo.arquivo }}{% if ts_salvo.atualizado_em %} · atualizado {{ ts_salvo.atualizado_em }}{% endif %}</small>
+            </span>
+        </label>
+        <label class="template-source__mode">
+            <input type="radio" name="ts-mode-{{ _f }}" value="upload" data-role="ts-mode">
+            <span class="template-source__mode-body">
+                <strong>Atualizar / enviar novo</strong>
+                <small>Substitui o template pronto</small>
+            </span>
+        </label>
+    </div>
+    {% endif %}
+
+    <div class="template-source__upload" data-role="ts-upload"{% if _tem %} hidden{% endif %}>
+        {% with id_suffix=_f, accept=".xlsm", label="Solte o template Amazon", sublabel="ou clique para selecionar (.xlsm)" %}
+            {% include "_dropzone.html" %}
+        {% endwith %}
+        <label class="template-source__save">
+            <input type="checkbox" data-role="ts-save" checked>
+            Salvar como template pronto para a próxima vez
+        </label>
+    </div>
+</div>

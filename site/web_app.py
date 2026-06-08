@@ -91,6 +91,78 @@ def _jobs_storage_dir() -> str:
     return base
 
 
+# --------------------------- Template SKU "pronto" ---------------------------
+# Um único template NOGORA (.xlsm) salvo no volume persistente (DATA_DIR), para
+# que o usuário não precise reenviá-lo a cada criação por SKU. Global (igual às
+# bases de Precificação/Descrição). O sidecar .json guarda o nome original.
+def _template_sku_dir() -> str:
+    data_dir = os.getenv("DATA_DIR") or os.path.join(_root, "_data")
+    os.makedirs(data_dir, exist_ok=True)
+    return data_dir
+
+
+def _template_sku_path() -> str:
+    return os.path.join(_template_sku_dir(), "template_sku.xlsm")
+
+
+def _template_sku_meta_path() -> str:
+    return os.path.join(_template_sku_dir(), "template_sku.json")
+
+
+def _salvar_template_sku(dados: bytes, nome_original: str) -> None:
+    with open(_template_sku_path(), "wb") as f:
+        f.write(dados)
+    with open(_template_sku_meta_path(), "w", encoding="utf-8") as f:
+        json.dump({"nome_original": nome_original or "template_sku.xlsm"}, f,
+                  ensure_ascii=False)
+
+
+def _ler_template_sku() -> Optional[bytes]:
+    caminho = _template_sku_path()
+    if not os.path.exists(caminho):
+        return None
+    with open(caminho, "rb") as f:
+        return f.read()
+
+
+def _remover_template_sku() -> None:
+    for p in (_template_sku_path(), _template_sku_meta_path()):
+        try:
+            os.remove(p)
+        except FileNotFoundError:
+            pass
+
+
+def _template_sku_info() -> dict:
+    caminho = _template_sku_path()
+    existe = os.path.exists(caminho)
+    nome = "template_sku.xlsm"
+    atualizado_em = None
+    tamanho = None
+    if existe:
+        try:
+            mtime = os.path.getmtime(caminho)
+            atualizado_em = datetime.fromtimestamp(mtime).strftime("%d/%m/%Y %H:%M")
+            tamanho = os.path.getsize(caminho)
+        except Exception:
+            pass
+        try:
+            with open(_template_sku_meta_path(), "r", encoding="utf-8") as f:
+                nome = (json.load(f) or {}).get("nome_original") or nome
+        except Exception:
+            pass
+    return {
+        "existe": existe,
+        "arquivo": nome,
+        "atualizado_em": atualizado_em,
+        "tamanho": tamanho,
+    }
+
+
+def _flag_ligada(valor) -> bool:
+    return (valor or "") in ("1", "true", "on", "True")
+
+
 def _persistir_resultado_em_disco(job_id: str, resultado, owner_id: Optional[str], tipo: str) -> None:
     """Grava arquivo_saida em <jobs_dir>/{id}.xlsm + sidecar {id}.json.
     Chamada após processamento bem-sucedido. Erros não derrubam o job."""
@@ -416,6 +488,7 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
         return {
             "precificacao": _info(cfg_atual.arquivo_precificacao),
             "descricao": _info(cfg_atual.arquivo_descricao),
+            "template_sku": _template_sku_info(),
             "sharepoint_configurado": sharepoint_configurado,
         }
 
@@ -497,6 +570,33 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
             return jsonify({"sucesso": True, "mensagem": "Base de Descrição atualizada.", "bases": _status_bases()})
         except Exception as e:
             return jsonify({"sucesso": False, "mensagem": f"Erro ao salvar: {e}"}), 500
+
+    # --------------------------- API: template SKU pronto ---------------------------
+    @app.route("/api/template/sku/upload", methods=["POST"])
+    @login_required
+    def api_upload_template_sku():
+        arquivo = request.files.get("arquivo")
+        if not arquivo or not arquivo.filename:
+            return jsonify({"sucesso": False, "mensagem": "Nenhum arquivo enviado."}), 400
+        if not arquivo.filename.lower().endswith(".xlsm"):
+            return jsonify({"sucesso": False,
+                            "mensagem": "O template precisa ser um arquivo .xlsm."}), 400
+        try:
+            _salvar_template_sku(arquivo.read(), arquivo.filename)
+            return jsonify({"sucesso": True, "mensagem": "Template pronto atualizado.",
+                            "bases": _status_bases()})
+        except Exception as e:
+            return jsonify({"sucesso": False, "mensagem": f"Erro ao salvar: {e}"}), 500
+
+    @app.route("/api/template/sku", methods=["DELETE"])
+    @login_required
+    def api_delete_template_sku():
+        try:
+            _remover_template_sku()
+            return jsonify({"sucesso": True, "mensagem": "Template pronto removido.",
+                            "bases": _status_bases()})
+        except Exception as e:
+            return jsonify({"sucesso": False, "mensagem": f"Erro ao remover: {e}"}), 500
 
     # --------------------------- API: termos ---------------------------
     @app.route("/api/termos")
@@ -601,7 +701,27 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
         if not arquivo_entrada:
             abort(400, description="arquivo_entrada é obrigatório.")
         bytes_entrada = arquivo_entrada.read()
-        bytes_template = arquivo_template.read() if arquivo_template else None
+
+        # Template: upload novo (opcionalmente salvo como "pronto"),
+        # ou reaproveita o template pronto salvo no servidor.
+        usar_salvo = _flag_ligada(req.form.get("usar_template_salvo"))
+        salvar = _flag_ligada(req.form.get("salvar_template"))
+        if arquivo_template:
+            bytes_template = arquivo_template.read()
+            if salvar and bytes_template:
+                try:
+                    _salvar_template_sku(bytes_template,
+                                         arquivo_template.filename or "template_sku.xlsm")
+                except Exception as e:
+                    app.logger.warning("Falha ao salvar template pronto: %s", e)
+        elif usar_salvo:
+            bytes_template = _ler_template_sku()
+            if not bytes_template:
+                abort(400, description=(
+                    "Nenhum template pronto salvo. Envie um template .xlsm "
+                    "ou marque para salvá-lo."))
+        else:
+            bytes_template = None
         job = Job(tipo, owner_id=current_user.id if current_user.is_authenticated else None)
         with JOBS_LOCK:
             JOBS[job.id] = job
@@ -965,10 +1085,25 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
             return 400, {"sucesso": False,
                          "mensagem": "'entradas' precisa ser lista não-vazia."}
         arquivo_template = request.files.get("arquivo_template")
-        if not arquivo_template:
+        usar_salvo = _flag_ligada(request.form.get("usar_template_salvo"))
+        salvar = _flag_ligada(request.form.get("salvar_template"))
+        if arquivo_template:
+            bytes_template = arquivo_template.read()
+            if salvar and bytes_template:
+                try:
+                    _salvar_template_sku(bytes_template,
+                                         arquivo_template.filename or "template_sku.xlsm")
+                except Exception as e:
+                    app.logger.warning("Falha ao salvar template pronto: %s", e)
+        elif usar_salvo:
+            bytes_template = _ler_template_sku()
+            if not bytes_template:
+                return 400, {"sucesso": False, "mensagem": (
+                    "Nenhum template pronto salvo. Envie um template .xlsm "
+                    "ou marque para salvá-lo.")}
+        else:
             return 400, {"sucesso": False,
-                         "mensagem": "arquivo_template é obrigatório."}
-        bytes_template = arquivo_template.read()
+                         "mensagem": "arquivo_template é obrigatório (ou use o template pronto)."}
 
         job = Job("asin-manual" if modo_asin else "sku-manual",
                   owner_id=current_user.id)

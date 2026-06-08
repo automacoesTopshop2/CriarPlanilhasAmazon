@@ -109,6 +109,62 @@
         });
     }
 
+    // ==========================================================
+    // ORIGEM DO TEMPLATE (usar pronto x enviar/atualizar)
+    // ==========================================================
+    // field (id da dropzone) -> { modo:'pronto'|'upload', temSalvo, salvar() }
+    const templateSources = {};
+
+    function setupTemplateSources() {
+        document.querySelectorAll('[data-role="template-source"]').forEach(setupTemplateSource);
+    }
+
+    function setupTemplateSource(el) {
+        const field = el.dataset.field;
+        const temSalvo = el.dataset.temSalvo === '1';
+        const uploadArea = el.querySelector('[data-role="ts-upload"]');
+        const saveCheckbox = el.querySelector('[data-role="ts-save"]');
+        const radios = el.querySelectorAll('[data-role="ts-mode"]');
+
+        const state = {
+            modo: temSalvo ? 'pronto' : 'upload',
+            temSalvo,
+            salvar: () => !!(saveCheckbox && saveCheckbox.checked),
+        };
+        templateSources[field] = state;
+
+        function aplicar() {
+            if (uploadArea) uploadArea.hidden = state.modo !== 'upload';
+            updateProcessButton();
+            if (typeof window.__manualRecompute === 'function') window.__manualRecompute();
+            updateSteps();
+        }
+
+        radios.forEach(r => r.addEventListener('change', () => {
+            if (r.checked) { state.modo = r.value; aplicar(); }
+        }));
+        aplicar();
+    }
+
+    // Campo de template exige upload? (true também quando não há componente
+    // de template-source — preserva o comportamento antigo das outras páginas.)
+    function templateRequerArquivo(field) {
+        const ts = templateSources[field];
+        if (!ts) return true;
+        return ts.modo === 'upload';
+    }
+
+    // Anexa os flags de template pronto ao FormData de processamento.
+    function aplicarFlagsTemplate(fd, field) {
+        const ts = templateSources[field];
+        if (!ts) return;
+        if (ts.modo === 'pronto') {
+            fd.append('usar_template_salvo', '1');
+        } else if (dropzoneFiles[field] && ts.salvar()) {
+            fd.append('salvar_template', '1');
+        }
+    }
+
     function updateProcessButton() {
         const btn = document.getElementById('btn-processar');
         if (!btn) return;
@@ -117,7 +173,7 @@
             return;
         }
         const required = Object.values(window.__procConfig.camposArquivos);
-        const faltando = required.filter(f => !dropzoneFiles[f]);
+        const faltando = required.filter(f => templateRequerArquivo(f) && !dropzoneFiles[f]);
         const allReady = faltando.length === 0;
         btn.disabled = !allReady;
         btn.title = allReady
@@ -154,9 +210,13 @@
         const fd = new FormData();
         for (const [campo, field] of Object.entries(opts.camposArquivos)) {
             const f = dropzoneFiles[field];
-            if (!f) { toast('Arquivo faltando: ' + campo, 'err'); return; }
+            if (!f) {
+                if (!templateRequerArquivo(field)) continue; // usa template pronto
+                toast('Arquivo faltando: ' + campo, 'err'); return;
+            }
             fd.append(campo, f);
         }
+        aplicarFlagsTemplate(fd, 'template');
 
         const card = document.getElementById('processing');
         const consoleEl = document.getElementById('console');
@@ -674,14 +734,18 @@
 
         function atualizarBotaoProcessar() {
             const linhas = Array.from(tbody.querySelectorAll('tr'));
-            const temTemplate = !!dropzoneFiles[opts.templateField];
+            const temTemplate = !!dropzoneFiles[opts.templateField] ||
+                !templateRequerArquivo(opts.templateField);
             const todasResolvidas = linhas.length > 0 &&
                 linhas.every(tr => tr.dataset.skuMarket);
             btnProcessar.disabled = !(temTemplate && todasResolvidas);
-            if (!temTemplate) btnProcessar.title = 'Envie o template .xlsm';
+            if (!temTemplate) btnProcessar.title = 'Envie o template .xlsm ou use o template pronto';
             else if (!todasResolvidas) btnProcessar.title = 'Solicite o SKU-Market de todas as linhas primeiro';
             else btnProcessar.title = '';
         }
+        // Permite que a troca de modo do template (usar pronto x enviar)
+        // recalcule o botão deste fluxo manual.
+        window.__manualRecompute = atualizarBotaoProcessar;
 
         // ---- solicitar SKU-Market de UMA linha ----
         // Retorna {ok:bool, msg?:string} para que o "solicitar todos" possa
@@ -892,11 +956,15 @@
                 entradas.push(e);
             }
             const template = dropzoneFiles[opts.templateField];
-            if (!template) { toast('Envie o template .xlsm primeiro.', 'err'); return; }
+            if (!template && templateRequerArquivo(opts.templateField)) {
+                toast('Envie o template .xlsm primeiro (ou use o template pronto).', 'err');
+                return;
+            }
 
             const fd = new FormData();
             fd.append('entradas', JSON.stringify(entradas));
-            fd.append('arquivo_template', template);
+            if (template) fd.append('arquivo_template', template);
+            aplicarFlagsTemplate(fd, opts.templateField);
 
             const card = document.getElementById('processing');
             const consoleEl = document.getElementById('console');
@@ -956,6 +1024,7 @@
     // ==========================================================
     document.addEventListener('DOMContentLoaded', () => {
         setupDropzones();
+        setupTemplateSources();
         setupSidebar();
         updateSteps();
     });
