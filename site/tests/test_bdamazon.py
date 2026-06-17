@@ -644,6 +644,98 @@ def test_asin_manual_exige_codigo_externo(client, app, monkeypatch, usuario):
     assert r.status_code == 400
 
 
+# ---------------------------------------------------------------------------
+# /api/bdamazon/criar-sku-lote  (criação em lote)
+# ---------------------------------------------------------------------------
+
+def test_criar_lote_sem_api_key_503(client, app, monkeypatch):
+    monkeypatch.delenv("BDAMAZON_API_KEY", raising=False)
+    _criar_usuario_com_codigo_externo(app, codigo="op-lote-503")
+    _login(client, "op@topshop.com.br", "SenhaForte123!")
+    r = client.post("/api/bdamazon/criar-sku-lote",
+                    json={"itens": [{"sku_raiz": "A", "conta_codigo": "BOX2"}]})
+    assert r.status_code == 503
+    assert "BDAMAZON_API_KEY" in r.get_json()["mensagem"]
+
+
+def test_criar_lote_sem_codigo_externo_400(client, app, monkeypatch):
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
+    _criar_usuario_sem_codigo_externo(app)
+    _login(client, "semcodigo@topshop.com.br", "SenhaForte123!")
+    r = client.post("/api/bdamazon/criar-sku-lote",
+                    json={"itens": [{"sku_raiz": "A", "conta_codigo": "BOX2"}]})
+    assert r.status_code == 400
+    assert "codigo_externo" in r.get_json()["mensagem"]
+
+
+def test_criar_lote_itens_vazio_400(client, app, monkeypatch):
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
+    _criar_usuario_com_codigo_externo(app, codigo="op-lote-vazio")
+    _login(client, "op@topshop.com.br", "SenhaForte123!")
+    r = client.post("/api/bdamazon/criar-sku-lote", json={"itens": []})
+    assert r.status_code == 400
+    assert "itens" in r.get_json()["mensagem"].lower()
+
+
+def test_criar_lote_injeta_usuario_e_devolve_resultados(client, app, monkeypatch):
+    """Sucesso parcial: o proxy injeta usuario_codigo em cada item e repassa
+    os resultados (com indice) tal como a API devolve."""
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
+    _criar_usuario_com_codigo_externo(app, codigo="joao.silva")
+    _login(client, "op@topshop.com.br", "SenhaForte123!")
+
+    chamadas = []
+
+    def fake_lote(itens):
+        chamadas.append(itens)
+        return {
+            "total": 2, "criados": 1, "falhas": 1,
+            "resultados": [
+                {"indice": 0, "ok": True, "sku_market": "BOX2-ABC123",
+                 "sku_raiz": "ABC123", "versao": 1, "conta_codigo": "BOX2",
+                 "conta_nome": "BOX2BRASIL", "asin": None, "ean": None,
+                 "titulo": None, "aguardando_titulo": False,
+                 "status_produto": "LIVRE", "criado_em": "x", "criado_por": "Joao"},
+                {"indice": 1, "ok": False, "sku_raiz": "XYZ", "conta_codigo": "NOPE",
+                 "erro": {"codigo": "CONTA_NAO_ENCONTRADA", "mensagem": "conta inválida"}},
+            ],
+        }
+
+    with patch("core.bdamazon_client.criar_skus_lote", side_effect=fake_lote):
+        r = client.post("/api/bdamazon/criar-sku-lote", json={"itens": [
+            {"sku_raiz": "ABC123", "conta_codigo": "BOX2"},
+            {"sku_raiz": "XYZ", "conta_codigo": "NOPE", "asin": "B0AAAAAAAA"},
+        ]})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = r.get_json()
+    assert body["sucesso"] is True
+    assert (body["total"], body["criados"], body["falhas"]) == (2, 1, 1)
+    assert body["resultados"][0]["sku_market"] == "BOX2-ABC123"
+    assert body["resultados"][1]["ok"] is False
+    # usuario_codigo injetado server-side em TODOS os itens
+    assert [it["usuario_codigo"] for it in chamadas[0]] == ["joao.silva", "joao.silva"]
+    # asin vazio vira None; preenchido é mantido
+    assert chamadas[0][0]["asin"] is None
+    assert chamadas[0][1]["asin"] == "B0AAAAAAAA"
+
+
+def test_criar_lote_propaga_429(client, app, monkeypatch):
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
+    _criar_usuario_com_codigo_externo(app, codigo="op-lote-429")
+    _login(client, "op@topshop.com.br", "SenhaForte123!")
+    err = bdamazon_client.BDAmazonRateLimitError("rate-limit", status=429)
+    with patch("core.bdamazon_client.criar_skus_lote", side_effect=err):
+        r = client.post("/api/bdamazon/criar-sku-lote",
+                        json={"itens": [{"sku_raiz": "A", "conta_codigo": "BOX2"}]})
+    assert r.status_code == 429
+
+
+def test_criar_lote_exige_login(client):
+    r = client.post("/api/bdamazon/criar-sku-lote",
+                    json={"itens": [{"sku_raiz": "A", "conta_codigo": "BOX2"}]})
+    assert r.status_code == 401
+
+
 def test_bdamazon_client_401_vira_auth_error(monkeypatch):
     monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_abc_def")
 
@@ -661,3 +753,35 @@ def test_bdamazon_client_401_vira_auth_error(monkeypatch):
     monkeypatch.setattr("requests.request", fake_request)
     with pytest.raises(bdamazon_client.BDAmazonAuthError):
         bdamazon_client.listar_contas()
+
+
+def test_client_criar_skus_lote_posta_no_endpoint_certo(monkeypatch):
+    """O cliente faz POST em /skus/lote com {itens:[...]} e devolve o envelope.
+    HTTP 207 (sucesso parcial) é aceito como sucesso (status < 400)."""
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_abc_def")
+    capturado = {}
+
+    class FakeResp:
+        status_code = 207
+        ok = True
+        text = ""
+
+        def json(self):
+            return {"total": 1, "criados": 1, "falhas": 0,
+                    "resultados": [{"indice": 0, "ok": True, "sku_market": "BOX2-A"}]}
+
+    def fake_request(method, url, headers, json, timeout):
+        capturado.update(method=method, url=url, json=json, timeout=timeout)
+        return FakeResp()
+
+    monkeypatch.setattr("requests.request", fake_request)
+    out = bdamazon_client.criar_skus_lote([
+        {"conta_codigo": "BOX2", "sku_raiz": "A", "usuario_codigo": "joao"},
+    ])
+    assert capturado["method"] == "POST"
+    assert capturado["url"].endswith("/skus/lote")
+    assert capturado["json"] == {"itens": [
+        {"conta_codigo": "BOX2", "sku_raiz": "A", "usuario_codigo": "joao"}]}
+    assert capturado["timeout"] == bdamazon_client.TIMEOUT_LOTE
+    assert out["criados"] == 1
+    assert out["resultados"][0]["sku_market"] == "BOX2-A"

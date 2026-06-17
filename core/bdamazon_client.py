@@ -8,6 +8,7 @@ Autenticação: header X-API-Key com BDAMAZON_API_KEY.
 Funções públicas:
     - listar_contas()          -> list[Conta]
     - criar_sku(...)           -> SkuCriado
+    - criar_skus_lote(itens)   -> dict (sucesso parcial: total/criados/falhas/resultados)
     - consultar_sku(sku_market)-> SkuCriado | None
 """
 
@@ -27,6 +28,9 @@ log = logging.getLogger(__name__)
 
 DEFAULT_BASE = "https://bdamazon-web-production.up.railway.app/api/v1"
 TIMEOUT_PADRAO = 15
+# O lote processa até 1000 itens (concorrência interna) — pode demorar bem mais
+# que uma criação unitária; damos uma folga generosa de timeout.
+TIMEOUT_LOTE = 120
 
 
 class BDAmazonError(Exception):
@@ -247,6 +251,27 @@ def criar_sku(
 
     data = _request("POST", "/skus", json_body=body)
     return SkuCriado.from_dict(data)
+
+
+def criar_skus_lote(itens: List[dict]) -> dict:
+    """POST /api/v1/skus/lote — cria vários SKUs numa única chamada.
+
+    `itens`: lista de dicts com `conta_codigo`, `sku_raiz`, `usuario_codigo`
+    (obrigatórios) e opcionais (`asin`, `ean`, `titulo`, `tipo_anuncio_id`,
+    `obs`, `data_lancamento`).
+
+    Devolve o envelope da API (sucesso parcial):
+        {"total", "criados", "falhas", "resultados": [...]}
+    onde cada resultado tem `indice` (casando com a ordem de entrada) e
+    `ok: true|false`. HTTP 207 (parcial) é tratado como sucesso pelo `_request`
+    (status < 400). O teto é 1000 itens/lote (acima → BDAmazonError via 413);
+    o rate-limit conta o lote inteiro como 1 requisição.
+    """
+    data = _request("POST", "/skus/lote", json_body={"itens": itens},
+                    timeout=TIMEOUT_LOTE)
+    if not isinstance(data, dict) or "resultados" not in data:
+        raise BDAmazonError(f"Resposta inesperada em /skus/lote: {data!r}")
+    return data
 
 
 def consultar_sku(sku_market: str) -> Optional[SkuCriado]:

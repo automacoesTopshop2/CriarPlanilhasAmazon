@@ -1,5 +1,12 @@
 # Prompt para o time/IA do BDAmazon — criação de SKUs em lote
 
+> ✅ **ENTREGUE (2026-06-17).** O BDAmazon implementou `POST /api/v1/skus/lote`
+> (até 1000 itens/chamada, sucesso parcial 200/207, lote conta como 1 requisição
+> no rate-limit). Já está integrado no CriarPlanilhasAmazon:
+> `core/bdamazon_client.py::criar_skus_lote`, proxy
+> `POST /api/bdamazon/criar-sku-lote` e o botão "Solicitar SKU-Market de todos".
+> O texto abaixo é o pedido original, mantido como referência do contrato.
+
 > **Contexto para colar no BDAmazon.** Hoje o sistema CriarPlanilhasAmazon
 > (cliente da API BDAmazon) cria SKUs **um a um** via `POST /api/v1/skus`.
 > Quando o operador solicita 500 SKUs de uma vez, são 500 requisições

@@ -861,6 +861,75 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
             "estoque_produto": estoque_produto,
         })
 
+    # --------------------------- API: criar SKUs em LOTE no BDAmazon ------------
+    @app.route("/api/bdamazon/criar-sku-lote", methods=["POST"])
+    @login_required
+    def api_bdamazon_criar_sku_lote():
+        """Cria vários SKUs no BDAmazon numa única chamada (sucesso parcial).
+
+        Usado pelo botão 'Solicitar SKU-Market de todos' — troca N requisições
+        unitárias por 1 ao endpoint POST /api/v1/skus/lote. Injeta o
+        usuario_codigo do usuário logado em cada item; o navegador nunca envia
+        credenciais nem usuario_codigo. Devolve os `resultados` (com `indice`)
+        para o front casar cada resultado com a linha da tabela."""
+        if not (os.getenv("BDAMAZON_API_KEY") or "").strip():
+            return jsonify({
+                "sucesso": False,
+                "mensagem": "BDAMAZON_API_KEY não configurada no servidor.",
+                "detalhe": "env var BDAMAZON_API_KEY ausente",
+            }), 503
+        if not current_user.codigo_externo:
+            return jsonify({
+                "sucesso": False,
+                "mensagem": (
+                    "Seu usuário não tem 'codigo_externo' definido. "
+                    "Peça ao admin para cadastrar em /admin/usuarios."
+                ),
+            }), 400
+        data = request.get_json(silent=True) or {}
+        itens_in = data.get("itens")
+        if not isinstance(itens_in, list) or not itens_in:
+            return jsonify({"sucesso": False,
+                            "mensagem": "'itens' precisa ser uma lista não-vazia."}), 400
+
+        itens_api = []
+        for it in itens_in:
+            it = it if isinstance(it, dict) else {}
+            itens_api.append({
+                "sku_raiz": (it.get("sku_raiz") or "").strip(),
+                "conta_codigo": (it.get("conta_codigo") or "").strip(),
+                "usuario_codigo": current_user.codigo_externo,
+                "asin": ((it.get("asin") or "").strip() or None),
+            })
+
+        try:
+            resposta = bdamazon_client.criar_skus_lote(itens_api)
+        except bdamazon_client.BDAmazonAuthError as e:
+            return jsonify({"sucesso": False,
+                            "mensagem": "BDAmazon recusou a autenticação.",
+                            "detalhe": str(e)}), 502
+        except bdamazon_client.BDAmazonNotFoundError as e:
+            return jsonify({"sucesso": False,
+                            "mensagem": "Conta ou usuário desconhecido no BDAmazon.",
+                            "detalhe": str(e)}), 404
+        except bdamazon_client.BDAmazonRateLimitError as e:
+            return jsonify({"sucesso": False,
+                            "mensagem": "Rate-limit do BDAmazon. Aguarde alguns segundos.",
+                            "detalhe": str(e)}), 429
+        except bdamazon_client.BDAmazonError as e:
+            app.logger.error("Falha no BDAmazon /skus/lote: %s", e)
+            return jsonify({"sucesso": False,
+                            "mensagem": "Falha ao criar SKUs em lote no BDAmazon.",
+                            "detalhe": str(e)}), 502
+
+        return jsonify({
+            "sucesso": True,
+            "total": resposta.get("total", len(itens_api)),
+            "criados": resposta.get("criados", 0),
+            "falhas": resposta.get("falhas", 0),
+            "resultados": resposta.get("resultados", []),
+        })
+
     # --------------------------- API: consultar 1 SKU no BDAmazon ---------------
     @app.route("/api/bdamazon/consultar-sku/<sku_market>")
     @login_required

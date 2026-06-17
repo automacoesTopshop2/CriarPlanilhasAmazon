@@ -809,6 +809,40 @@
         window.__manualRecompute = atualizarBotaoProcessar;
 
         // ---- solicitar SKU-Market de UMA linha ----
+        // Marca a linha como resolvida (preenche o sku_market, trava os campos).
+        // Compartilhado pela solicitação individual e pela em lote.
+        function marcarLinhaResolvida(tr, data) {
+            tr.dataset.skuMarket = data.sku_market;
+            tr.dataset.versao = String(data.versao || 1);
+            tr.dataset.statusProduto = data.status_produto || '';
+            const cell = tr.querySelector('.cell-sku-market');
+            cell.innerHTML = `
+                <code style="font-size:12px">${escape(data.sku_market)}</code>
+                <small style="color:var(--text-muted);display:block">v${escape(String(data.versao))}</small>
+                <span class="status-produto-wrap" style="display:block;margin-top:4px">${statusProdutoBadge(data.status_produto)}</span>
+            `;
+            const elSku = tr.querySelector('[data-field="sku_raiz"]');
+            if (elSku) elSku.readOnly = true;
+            const elConta = tr.querySelector('[data-field="conta_codigo"]');
+            if (elConta) elConta.disabled = true;
+            if (opts.comAsin) {
+                const elAsin = tr.querySelector('[data-field="asin"]');
+                if (elAsin) elAsin.readOnly = true;
+            }
+        }
+
+        // Linha que falhou no lote: mostra o erro e restaura o botão "Solicitar"
+        // para o usuário poder reenviar aquela linha individualmente.
+        function marcarLinhaErro(tr, erro) {
+            const cell = tr.querySelector('.cell-sku-market');
+            const msg = (erro && erro.mensagem) || 'falha ao criar';
+            cell.innerHTML = `
+                <button type="button" class="btn btn--xs btn--dark" data-role="solicitar-sku-market">Solicitar</button>
+                <small style="color:var(--danger);display:block;margin-top:4px">${escape(msg)}</small>
+            `;
+            atualizarBotaoSolicitar(tr);
+        }
+
         // Retorna {ok:bool, msg?:string} para que o "solicitar todos" possa
         // decidir se aborta o lote ou continua.
         async function solicitarLinha(tr, {silentToast = false} = {}) {
@@ -838,18 +872,7 @@
                     // 429 → sinaliza para parar o lote
                     return { ok: false, msg, status: r.status };
                 }
-                tr.dataset.skuMarket = data.sku_market;
-                tr.dataset.versao = String(data.versao || 1);
-                tr.dataset.statusProduto = data.status_produto || '';
-                const cell = tr.querySelector('.cell-sku-market');
-                cell.innerHTML = `
-                    <code style="font-size:12px">${escape(data.sku_market)}</code>
-                    <small style="color:var(--text-muted);display:block">v${escape(String(data.versao))}</small>
-                    <span class="status-produto-wrap" style="display:block;margin-top:4px">${statusProdutoBadge(data.status_produto)}</span>
-                `;
-                tr.querySelector('[data-field="sku_raiz"]').readOnly = true;
-                tr.querySelector('[data-field="conta_codigo"]').disabled = true;
-                if (opts.comAsin) tr.querySelector('[data-field="asin"]').readOnly = true;
+                marcarLinhaResolvida(tr, data);
                 if (!silentToast) {
                     toast(`SKU-Market criado: ${data.sku_market}`, 'ok');
                     // Alerta de risco do catálogo: laranja p/ SENSÍVEL, vermelho p/ PROIBIDO.
@@ -906,27 +929,67 @@
 
                 btnTodos.disabled = true;
                 const labelOriginal = btnTodos.textContent;
-                let ok = 0, falha = 0;
-                for (let i = 0; i < linhas.length; i++) {
-                    btnTodos.textContent = `Solicitando ${i + 1}/${linhas.length}...`;
-                    const r = await solicitarLinha(linhas[i], { silentToast: true });
-                    if (r.ok) ok++;
-                    else {
-                        falha++;
-                        // 429 (rate-limit): para a bateria; demais erros: continua
-                        if (r.status === 429) {
-                            toast(`Rate-limit do BDAmazon atingido. Parei em ${ok}/${linhas.length}. Aguarde 1min e clique de novo.`, 'err');
+                // Endpoint de lote do BDAmazon aceita até 1000 itens/chamada;
+                // fatiamos em blocos para ficar com folga e dar progresso visível.
+                const CHUNK = 500;
+                let ok = 0, falha = 0, proibidos = 0, sensiveis = 0, abortou = false;
+                try {
+                    for (let start = 0; start < linhas.length && !abortou; start += CHUNK) {
+                        const slice = linhas.slice(start, start + CHUNK);
+                        btnTodos.textContent = linhas.length > CHUNK
+                            ? `Criando em lote ${start + 1}–${start + slice.length}/${linhas.length}...`
+                            : `Criando ${slice.length} em lote...`;
+                        const itens = slice.map(tr => ({
+                            sku_raiz: valorCampo(tr, 'sku_raiz'),
+                            conta_codigo: valorCampo(tr, 'conta_codigo'),
+                            asin: opts.comAsin ? valorCampo(tr, 'asin') : '',
+                        }));
+                        let data;
+                        try {
+                            const r = await fetch(opts.endpointCriarLote, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+                                body: JSON.stringify({ itens }),
+                            });
+                            data = await r.json();
+                            if (!data || data.sucesso === false) {
+                                const det = data && data.detalhe ? ` (${data.detalhe})` : '';
+                                toast((data && data.mensagem || 'Falha no lote') + det, 'err');
+                                abortou = true;
+                                break;
+                            }
+                        } catch (err) {
+                            toast('Erro de rede no lote: ' + err, 'err');
+                            abortou = true;
                             break;
                         }
-                        toast(`Linha ${i + 1} falhou: ${r.msg}`, 'err');
+                        // Casa cada resultado com sua linha pelo índice (relativo ao bloco).
+                        (data.resultados || []).forEach(res => {
+                            const tr = slice[res.indice];
+                            if (!tr) return;
+                            if (res.ok) {
+                                marcarLinhaResolvida(tr, res);
+                                ok++;
+                                if (res.status_produto === 'PROIBIDO') proibidos++;
+                                else if (res.status_produto === 'SENSIVEL') sensiveis++;
+                            } else {
+                                marcarLinhaErro(tr, res.erro);
+                                falha++;
+                            }
+                        });
                     }
-                    // Pequena pausa para não rajar o limit (60 req/min ≈ 1/s)
-                    if (i + 1 < linhas.length) await new Promise(r => setTimeout(r, 250));
+                } finally {
+                    btnTodos.textContent = labelOriginal;
+                    btnTodos.disabled = false;
+                    atualizarBotaoProcessar();
                 }
-                btnTodos.textContent = labelOriginal;
-                btnTodos.disabled = false;
-                if (falha === 0) toast(`${ok} SKU-Market(s) criados com sucesso.`, 'ok');
-                else toast(`Concluído com ${ok} sucesso(s) e ${falha} falha(s).`, falha > ok ? 'err' : 'ok');
+                if (!abortou) {
+                    if (falha === 0) toast(`${ok} SKU-Market(s) criados com sucesso.`, 'ok');
+                    else toast(`Concluído: ${ok} criado(s), ${falha} falha(s). Reenvie as linhas em vermelho.`, falha > ok ? 'err' : 'ok');
+                }
+                // Alertas de risco do catálogo, agregados (evita 500 toasts).
+                if (proibidos) toast(`⛔ ${proibidos} SKU(s) PROIBIDO(s) no catálogo — não deveriam ser anunciados.`, 'err');
+                if (sensiveis) toast(`⚠️ ${sensiveis} SKU(s) SENSÍVEL(eis) — revise antes de criar os anúncios.`, 'err');
             });
         }
 
@@ -1109,6 +1172,7 @@
         return initEntradaManual({
             endpointContas: opts.endpointContas,
             endpointCriarSku: opts.endpointCriarSku,
+            endpointCriarLote: opts.endpointCriarLote,
             endpointProcessar: opts.endpointProcessar,
             templateField: opts.templateField,
             comAsin: false,
