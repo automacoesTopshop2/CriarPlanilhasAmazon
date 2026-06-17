@@ -42,6 +42,14 @@
         return (bytes / Math.pow(k, i)).toFixed(i ? 1 : 0) + ' ' + units[i];
     }
 
+    // Bases (Precificação/Descrição) carregadas? A página injeta window.__basesStatus.
+    // Se a página não informou (ex.: limpeza), não bloqueia (retorna true).
+    function basesCarregadas() {
+        const b = window.__basesStatus;
+        if (!b) return true;
+        return !!(b.precificacao && b.descricao);
+    }
+
     // ==========================================================
     // DROPZONES
     // ==========================================================
@@ -207,6 +215,13 @@
     window.initProcessamento = initProcessamento;
 
     function iniciarProcessamento(opts) {
+        if (!basesCarregadas()) {
+            const ok = window.confirm(
+                'Atenção: as bases de Precificação/Descrição não estão carregadas.\n\n' +
+                'A planilha será gerada com preços/descrições vazios.\n\n' +
+                'Deseja prosseguir mesmo assim?');
+            if (!ok) return;
+        }
         const fd = new FormData();
         for (const [campo, field] of Object.entries(opts.camposArquivos)) {
             const f = dropzoneFiles[field];
@@ -646,41 +661,87 @@
         let contas = [];
         const marcaDefaultValor = () => (marcaDefault && marcaDefault.value) || '';
 
-        // Carrega contas do BDAmazon
-        fetch(opts.endpointContas)
-            .then(r => r.json())
-            .then(data => {
+        // ---- Carregamento / refresh de contas ----
+        const btnRefreshContas = document.getElementById('btn-refresh-contas');
+
+        function opcoesContasHTML(valorSel) {
+            return `<option value="">— selecione —</option>` + contas.map(c =>
+                `<option value="${escape(c.codigo)}"${c.codigo === valorSel ? ' selected' : ''}>${escape(c.nome)} (${escape(c.codigo)})</option>`
+            ).join('');
+        }
+
+        function renderSelectContas(valorSelecionado) {
+            if (!contas.length) return `<select data-field="conta_codigo" disabled><option value="">—</option></select>`;
+            return `<select data-field="conta_codigo">${opcoesContasHTML(valorSelecionado)}</select>`;
+        }
+
+        // Re-popula o select padrão e os selects das linhas ainda não resolvidas,
+        // preservando a seleção atual — assim contas novas aparecem sem perder dados.
+        function repopularSelectsContas() {
+            selectDefault.innerHTML = opcoesContasHTML(selectDefault.value);
+            tbody.querySelectorAll('tr').forEach(tr => {
+                if (tr.dataset.skuMarket) return; // resolvida: não mexe (select fica fixo)
+                const sel = tr.querySelector('[data-field="conta_codigo"]');
+                if (sel) { sel.innerHTML = opcoesContasHTML(sel.value); sel.disabled = false; }
+            });
+        }
+
+        async function carregarContas({ refresh = false } = {}) {
+            if (refresh && btnRefreshContas) {
+                btnRefreshContas.disabled = true;
+                btnRefreshContas.classList.add('is-loading');
+            }
+            try {
+                const data = await fetch(opts.endpointContas).then(r => r.json());
                 if (!data.sucesso) {
-                    const msg = data.mensagem || 'falha ao listar contas';
                     const det = data.detalhe ? ` (${data.detalhe})` : '';
-                    selectDefault.innerHTML =
-                        `<option value="">Erro: ${escape(msg)}</option>`;
+                    const msg = data.mensagem || 'falha ao listar contas';
+                    if (!contas.length) selectDefault.innerHTML = `<option value="">Erro: ${escape(msg)}</option>`;
                     toast(msg + det, 'err');
                     console.error('[BDAmazon /contas]', data);
                     return;
                 }
                 contas = data.contas || [];
                 if (!contas.length) {
-                    selectDefault.innerHTML =
-                        `<option value="">Nenhuma conta com codigo_externo cadastrada</option>`;
+                    selectDefault.innerHTML = `<option value="">Nenhuma conta com codigo_externo cadastrada</option>`;
+                    if (refresh) toast('Nenhuma conta cadastrada no BDAmazon.', 'err');
                     return;
                 }
-                const optsHtml = contas
-                    .map(c => `<option value="${escape(c.codigo)}">${escape(c.nome)} (${escape(c.codigo)})</option>`)
-                    .join('');
-                selectDefault.innerHTML = `<option value="">— selecione —</option>` + optsHtml;
-            })
-            .catch(e => {
-                selectDefault.innerHTML = `<option value="">Erro de rede</option>`;
+                repopularSelectsContas();
+                if (refresh) toast(`${contas.length} conta(s) atualizadas.`, 'ok');
+            } catch (e) {
+                if (!contas.length) selectDefault.innerHTML = `<option value="">Erro de rede</option>`;
                 toast('Falha ao carregar contas: ' + e, 'err');
-            });
+            } finally {
+                if (refresh && btnRefreshContas) {
+                    btnRefreshContas.disabled = false;
+                    btnRefreshContas.classList.remove('is-loading');
+                }
+            }
+        }
 
-        function renderSelectContas(valorSelecionado) {
-            if (!contas.length) return `<select disabled><option>—</option></select>`;
-            const optsHtml = contas.map(c =>
-                `<option value="${escape(c.codigo)}"${c.codigo === valorSelecionado ? ' selected' : ''}>${escape(c.nome)} (${escape(c.codigo)})</option>`
-            ).join('');
-            return `<select data-field="conta_codigo"><option value="">— selecione —</option>${optsHtml}</select>`;
+        if (btnRefreshContas) {
+            btnRefreshContas.addEventListener('click', () => carregarContas({ refresh: true }));
+        }
+        carregarContas();
+
+        // ---- Validações de conferência (avisos antes de criar/gerar) ----
+        // Kits usam prefixo "K-"; após removê-lo, qualquer letra restante é suspeita.
+        const KIT_PREFIX_RE = /^\s*k-/i;
+        function skuTemLetraSuspeita(sku) {
+            return /[a-zA-Z]/.test((sku || '').replace(KIT_PREFIX_RE, ''));
+        }
+        function valorCampo(tr, campo) {
+            const el = tr.querySelector(`[data-field="${campo}"]`);
+            return (el && el.value || '').trim();
+        }
+        // Mostra um confirm listando os problemas; true = pode prosseguir.
+        function confirmarAvisos(titulo, avisos) {
+            if (!avisos.length) return true;
+            const msg = titulo + '\n\n- ' + avisos.join('\n- ') +
+                '\n\nRecomenda-se verificar se os dados foram preenchidos corretamente.' +
+                '\n\nDeseja prosseguir mesmo assim?';
+            return window.confirm(msg);
         }
 
         function novaLinha(skuRaiz, asin) {
@@ -824,6 +885,25 @@
                     toast('Nada para solicitar — todas as linhas já têm SKU-Market.', 'ok');
                     return;
                 }
+
+                // Confere os dados antes de disparar a criação em massa.
+                const avisos = [];
+                const semSku = linhas.filter(tr => !valorCampo(tr, 'sku_raiz')).length;
+                const semConta = linhas.filter(tr => !valorCampo(tr, 'conta_codigo')).length;
+                const comLetra = linhas.map(tr => valorCampo(tr, 'sku_raiz'))
+                    .filter(s => s && skuTemLetraSuspeita(s));
+                if (semSku) avisos.push(`${semSku} linha(s) sem SKU raiz`);
+                if (opts.comAsin) {
+                    const semAsin = linhas.filter(tr => !valorCampo(tr, 'asin')).length;
+                    if (semAsin) avisos.push(`${semAsin} linha(s) sem ASIN`);
+                }
+                if (semConta) avisos.push(`${semConta} linha(s) sem conta selecionada`);
+                if (comLetra.length) {
+                    const amostra = comLetra.slice(0, 6).join(', ') + (comLetra.length > 6 ? '…' : '');
+                    avisos.push(`${comLetra.length} SKU(s) com letras fora do padrão de kit "K-": ${amostra}`);
+                }
+                if (!confirmarAvisos('Atenção antes de criar os SKU-Market:', avisos)) return;
+
                 btnTodos.disabled = true;
                 const labelOriginal = btnTodos.textContent;
                 let ok = 0, falha = 0;
@@ -934,6 +1014,23 @@
 
         btnProcessar.addEventListener('click', () => {
             const linhas = Array.from(tbody.querySelectorAll('tr'));
+            if (!linhas.length) {
+                toast('Adicione ao menos uma linha antes de gerar.', 'err');
+                return;
+            }
+
+            // Avisos de conferência antes de gerar (não bloqueiam — pedem confirmação).
+            const avisos = [];
+            if (!basesCarregadas()) {
+                avisos.push('as bases de Precificação/Descrição não estão carregadas (preços/descrições ficarão vazios)');
+            }
+            const comLetra = linhas.map(tr => valorCampo(tr, 'sku_raiz'))
+                .filter(s => s && skuTemLetraSuspeita(s));
+            if (comLetra.length) {
+                avisos.push(`${comLetra.length} SKU(s) com letras fora do padrão de kit "K-"`);
+            }
+            if (!confirmarAvisos('Atenção antes de gerar a planilha:', avisos)) return;
+
             const entradas = [];
             for (const tr of linhas) {
                 if (!tr.dataset.skuMarket) {

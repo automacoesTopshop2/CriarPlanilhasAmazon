@@ -464,6 +464,17 @@ h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
     cursor: pointer;
 }
 
+/* ---- Input + botão lado a lado (ex.: select de conta + "Atualizar contas") ---- */
+.input-with-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.input-with-btn .select { flex: 1; min-width: 0; }
+.input-with-btn .btn { flex: 0 0 auto; white-space: nowrap; }
+#btn-refresh-contas.is-loading { pointer-events: none; opacity: 0.7; }
+#btn-refresh-contas.is-loading svg { animation: spin 0.8s linear infinite; }
+
 /* ---------- Inputs ---------- */
 .field { display: flex; flex-direction: column; gap: var(--space-2); }
 .label { font-size: 13px; font-weight: 600; color: var(--text); }
