@@ -428,9 +428,11 @@ h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 .dropzone__clear:hover { background: #fff; color: var(--danger); }
 
 /* ---- Origem do template (usar pronto x enviar/atualizar) ---- */
+/* auto-fit: 2 cartões lado a lado quando há espaço (card Planilha) e empilhados
+   quando a coluna é estreita (ex.: coluna do template no card Manual). */
 .template-source__modes {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: var(--space-2);
     margin-bottom: var(--space-3);
 }
