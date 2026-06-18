@@ -7,5 +7,6 @@
 
 from .precos import CarregadorPrecos
 from .descricao import CarregadorDescricao
+from .descricao_api import CarregadorDescricaoAPI
 
-__all__ = ['CarregadorPrecos', 'CarregadorDescricao']
+__all__ = ['CarregadorPrecos', 'CarregadorDescricao', 'CarregadorDescricaoAPI']

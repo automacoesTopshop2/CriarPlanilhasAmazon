@@ -29,7 +29,7 @@ from datetime import datetime
 from ..config import Configuracoes
 from ..utils import Utilitarios, LogErro
 from ..mapeadores import MapeadorColunas
-from ..carregadores import CarregadorPrecos, CarregadorDescricao
+from ..carregadores import CarregadorPrecos, CarregadorDescricao, CarregadorDescricaoAPI
 
 
 @dataclass
@@ -96,7 +96,12 @@ class ProcessadorBase(ABC):
         """
         self.config = config or Configuracoes()
         self.carregador_precos = CarregadorPrecos(self.config)
-        self.carregador_descricao = CarregadorDescricao(self.config)
+        # Fonte da base de Descrição: API do AgentedeTitulos (quando
+        # TITULOS_API_KEY está setada) ou a planilha DESCRIÇÃO.xlsx (padrão).
+        if self.config.usar_api_descricao:
+            self.carregador_descricao = CarregadorDescricaoAPI(self.config)
+        else:
+            self.carregador_descricao = CarregadorDescricao(self.config)
         self.mapeador = MapeadorColunas()
         self.logs: List[LogErro] = []
         

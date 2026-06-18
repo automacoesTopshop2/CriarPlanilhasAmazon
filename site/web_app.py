@@ -485,9 +485,21 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
         sharepoint_configurado = bool(
             gerenciador and (gerenciador.get("sharepoint_link_precificacao") or "").strip()
         )
+        # Descrição: arquivo local OU API do AgentedeTitulos (quando ativa).
+        if getattr(cfg_atual, "usar_api_descricao", False):
+            descricao_info = {
+                "arquivo": "API AgentedeTitulos (online)",
+                "existe": True,
+                "atualizado_em": None,
+                "tamanho": None,
+                "via_api": True,
+            }
+        else:
+            descricao_info = _info(cfg_atual.arquivo_descricao)
+
         return {
             "precificacao": _info(cfg_atual.arquivo_precificacao),
-            "descricao": _info(cfg_atual.arquivo_descricao),
+            "descricao": descricao_info,
             "template_sku": _template_sku_info(),
             "sharepoint_configurado": sharepoint_configurado,
         }

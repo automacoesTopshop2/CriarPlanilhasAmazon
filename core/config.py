@@ -49,6 +49,12 @@ class Configuracoes:
     arquivo_descricao: str = field(default_factory=lambda: os.getenv("ARQUIVO_DESCRICAO", "DESCRIÇÃO.xlsx"))
     arquivo_remover: str = field(default_factory=lambda: os.getenv("ARQUIVO_REMOVER", "termos_remover.txt"))
     arquivo_substituir: str = field(default_factory=lambda: os.getenv("ARQUIVO_SUBSTITUIR", "termos_substituir.txt"))
+
+    @property
+    def usar_api_descricao(self) -> bool:
+        """Quando TITULOS_API_KEY está configurada, a base de Descrição vem da
+        API do AgentedeTitulos (em vez da planilha DESCRIÇÃO.xlsx)."""
+        return bool((os.getenv("TITULOS_API_KEY") or "").strip())
     
     # -------------------------------------------------------------------------
     # CAMINHOS ONEDRIVE (Sincronização automática)
