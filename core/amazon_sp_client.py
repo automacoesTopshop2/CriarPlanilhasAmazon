@@ -42,7 +42,7 @@ log = logging.getLogger(__name__)
 
 LWA_TOKEN_URL = "https://api.amazon.com/auth/o2/token"
 DEFAULT_ENDPOINT = "https://sellingpartnerapi-na.amazon.com"  # região NA (inclui Brasil)
-DEFAULT_MARKETPLACE_ID = "A2Q3Y263D1MK6M"  # Amazon.com.br
+DEFAULT_MARKETPLACE_ID = "A2Q3Y263D00KWC"  # Amazon.com.br (id reportado por marketplaceParticipations)
 TIMEOUT_PADRAO = 30
 
 
@@ -241,7 +241,7 @@ def participacoes() -> dict:
 # Criação/validação de anúncio (Listings Items)
 # --------------------------------------------------------------------------- #
 def put_listing(sku: str, body: dict, *, mode: Optional[str] = "VALIDATION_PREVIEW",
-                included_data: str = "issues,status") -> dict:
+                included_data: str = "issues") -> dict:
     """PUT /listings/2021-08-01/items/{sellerId}/{sku}.
 
     `mode="VALIDATION_PREVIEW"` valida SEM publicar (recomendado para teste).

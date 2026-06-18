@@ -19,7 +19,7 @@ def _env_amazon(monkeypatch):
     monkeypatch.setenv("AMAZON_LWA_CLIENT_SECRET", "amzn1.oa2-cs.v1.def")
     monkeypatch.setenv("AMAZON_SP_REFRESH_TOKEN", "Atzr|fake")
     monkeypatch.setenv("AMAZON_SELLER_ID", "SELLER123")
-    monkeypatch.setenv("AMAZON_MARKETPLACE_ID", "A2Q3Y263D1MK6M")
+    monkeypatch.setenv("AMAZON_MARKETPLACE_ID", "A2Q3Y263D00KWC")
     # zera cache de token entre testes
     sp._token_cache["valor"] = None
     sp._token_cache["expira_em"] = 0.0
@@ -78,7 +78,7 @@ def test_put_listing_inclui_mode_validation(monkeypatch):
     assert cap["method"] == "PUT"
     assert "/listings/2021-08-01/items/SELLER123/MEU-SKU" in cap["url"]
     assert cap["params"]["mode"] == "VALIDATION_PREVIEW"
-    assert cap["params"]["marketplaceIds"] == "A2Q3Y263D1MK6M"
+    assert cap["params"]["marketplaceIds"] == "A2Q3Y263D00KWC"
     assert cap["headers"]["x-amz-access-token"] == "tok"
 
 
