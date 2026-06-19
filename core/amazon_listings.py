@@ -24,6 +24,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from . import amazon_sp_client as sp
+from . import amazon_categorias
 
 
 def _mp() -> str:
@@ -112,7 +113,8 @@ def criar_oferta_por_asin(
 def criar_produto_por_sku(
     *,
     sku: str,
-    product_type: str,
+    product_type: Optional[str] = None,
+    categoria: Optional[str] = None,
     titulo: str,
     descricao: str = "",
     bullets: Optional[list[str]] = None,
@@ -131,19 +133,26 @@ def criar_produto_por_sku(
 ) -> dict:
     """Cria/valida um PRODUTO NOVO + oferta a partir dos dados que já temos.
 
-    `product_type` é obrigatório (ex.: "HEADPHONES", "TOYS_AND_GAMES", ...). Os
-    atributos obrigatórios variam por tipo — rode em VALIDATION_PREVIEW e ajuste
-    via `atributos_extra` conforme os `issues` retornados / a Definitions API.
+    Informe `categoria` (padrao/brinquedos/potes/suplementos) — daí o
+    `product_type` e os atributos fixos de conformidade (país de origem, baterias,
+    garantia, hazmat, etc.) saem do mapa `amazon_categorias` (espelha o NOGORA).
+    Alternativamente passe `product_type` direto. `atributos_extra` sobrescreve
+    qualquer atributo. Rode em VALIDATION_PREVIEW e ajuste conforme os `issues`.
     """
+    if categoria and not product_type:
+        product_type = amazon_categorias.product_type(categoria)
     if not product_type:
-        raise sp.AmazonSPError("product_type é obrigatório para criar produto novo.")
+        raise sp.AmazonSPError("Informe `categoria` ou `product_type` para criar produto novo.")
     if not titulo:
         raise sp.AmazonSPError("titulo é obrigatório para criar produto novo.")
 
-    attrs: dict[str, Any] = {
-        "item_name": _attr(titulo),
-        "condition_type": _attr(condicao),
-    }
+    attrs: dict[str, Any] = {}
+    # 1) Atributos fixos de conformidade da categoria (defaults do NOGORA).
+    if categoria:
+        attrs.update(amazon_categorias.atributos_fixos(categoria))
+    # 2) Atributos do produto (variáveis).
+    attrs["item_name"] = _attr(titulo)
+    attrs["condition_type"] = _attr(condicao)
     if marca:
         attrs["brand"] = _attr(marca)
         attrs["manufacturer"] = _attr(marca)

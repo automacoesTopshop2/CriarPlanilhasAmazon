@@ -45,8 +45,10 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from core.config import Configuracoes
 from core.config_manager import GerenciadorConfig
 from core.processadores import ProcessadorSKU, ProcessadorASIN, ProcessadorLimpeza
+from core.carregadores import CarregadorPrecos
 from core.utils import Utilitarios
 from core import bdamazon_client
+from core import amazon_sp_client, amazon_listings
 
 from auth import (
     db, Usuario, auth_bp, admin_bp, config_bp, registrar_evento,
@@ -535,6 +537,13 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
     def page_asin():
         return render_template("asin.html", bases=_status_bases(), active="asin")
 
+    @app.route("/amazon")
+    @login_required
+    def page_amazon():
+        return render_template("amazon.html", bases=_status_bases(), active="amazon",
+                               amazon_disponivel=amazon_sp_client.credenciais_ok(),
+                               amazon_marketplace=amazon_sp_client.marketplace_id())
+
     @app.route("/limpeza")
     @login_required
     def page_limpeza():
@@ -941,6 +950,65 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
             "falhas": resposta.get("falhas", 0),
             "resultados": resposta.get("resultados", []),
         })
+
+    # --------------------------- API: criar anúncio na Amazon (SP-API) ----------
+    @app.route("/api/amazon/criar-oferta", methods=["POST"])
+    @login_required
+    def api_amazon_criar_oferta():
+        """Cria/valida ofertas por ASIN na Amazon via SP-API.
+
+        Body: {itens:[{sku, asin, preco?, quantidade?}], publicar:bool}.
+        `publicar=false` (default) roda em VALIDATION_PREVIEW (não publica).
+        Preço ausente é puxado da base de Precificação pelo sku (com prefixo da conta).
+        """
+        if not amazon_sp_client.credenciais_ok():
+            return jsonify({
+                "sucesso": False,
+                "mensagem": ("Credenciais da Amazon SP-API não configuradas no servidor "
+                             "(AMAZON_LWA_CLIENT_ID/SECRET, AMAZON_SP_REFRESH_TOKEN, AMAZON_SELLER_ID)."),
+            }), 503
+        data = request.get_json(silent=True) or {}
+        itens = data.get("itens")
+        if not isinstance(itens, list) or not itens:
+            return jsonify({"sucesso": False, "mensagem": "'itens' precisa ser uma lista não-vazia."}), 400
+        publicar = bool(data.get("publicar"))
+        modo = None if publicar else "VALIDATION_PREVIEW"
+
+        cfg_atual = app.config.get("APP_CONFIG", config)
+        cp = CarregadorPrecos(cfg_atual)
+        try:
+            cp.carregar()
+        except Exception:
+            pass  # sem base de preços local; aceita preço vindo no payload
+
+        resultados = []
+        for it in itens:
+            it = it if isinstance(it, dict) else {}
+            sku = (it.get("sku") or "").strip()
+            asin = (it.get("asin") or "").strip()
+            preco = it.get("preco")
+            if preco in (None, ""):
+                preco = cp.obter_preco(sku) if cp.esta_carregado else None
+            qtd = int(it.get("quantidade") or 0)
+            if not sku or not asin:
+                resultados.append({"sku": sku, "asin": asin, "ok": False,
+                                   "erros": ["sku e asin são obrigatórios"]})
+                continue
+            if not preco:
+                resultados.append({"sku": sku, "asin": asin, "ok": False,
+                                   "erros": ["preço não encontrado (informe na linha ou cadastre na Precificação)"]})
+                continue
+            try:
+                resp = amazon_listings.criar_oferta_por_asin(
+                    sku=sku, asin=asin, preco=float(preco), quantidade=qtd, mode=modo)
+                r = amazon_listings.resumo_issues(resp)
+                resultados.append({"sku": sku, "asin": asin, "preco": str(preco),
+                                   "ok": r["total_erros"] == 0, **r})
+            except amazon_sp_client.AmazonSPError as e:
+                resultados.append({"sku": sku, "asin": asin, "ok": False, "erros": [str(e)[:300]]})
+        return jsonify({"sucesso": True,
+                        "modo": "publicado" if publicar else "validado",
+                        "resultados": resultados})
 
     # --------------------------- API: consultar 1 SKU no BDAmazon ---------------
     @app.route("/api/bdamazon/consultar-sku/<sku_market>")

@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Criar via API · Amazon SP-API{% endblock %}
+
+{% block breadcrumb %}
+<span class="topbar__crumb">Sistema</span>
+<span class="topbar__chev">/</span>
+<a href="{{ url_for('home') }}" class="topbar__crumb">Módulos</a>
+<span class="topbar__chev">/</span>
+<span class="topbar__crumb topbar__crumb--current">Criar via API</span>
+{% endblock %}
+
+{% block topbar_right %}
+{% if amazon_disponivel %}
+<span class="badge badge--ok">SP-API conectada · {{ amazon_marketplace }}</span>
+{% else %}
+<span class="badge badge--off">SP-API não configurada</span>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Criar anúncio direto na Amazon (via API)</h1>
+    <p>Cria ofertas por ASIN (produto já existente no catálogo) na conta conectada, usando a SP-API. Comece em <strong>Validar</strong> (não publica) e só então <strong>Publicar</strong>.</p>
+</div>
+
+{% if not amazon_disponivel %}
+<div class="card mb-6">
+    <div class="card__body info-card-row">
+        <div class="info-card-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/><circle cx="12" cy="12" r="10"/></svg>
+        </div>
+        <div>
+            <div class="fw-600">Credenciais da Amazon não configuradas no servidor</div>
+            <div class="text-muted text-sm mt-2">Defina <code>AMAZON_LWA_CLIENT_ID</code>, <code>AMAZON_LWA_CLIENT_SECRET</code>, <code>AMAZON_SP_REFRESH_TOKEN</code> e <code>AMAZON_SELLER_ID</code> no ambiente (Railway/.env).</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card__header">
+        <div>
+            <div class="card__title">Ofertas por ASIN</div>
+            <div class="card__sub">Uma por linha: <code>SKU ; ASIN ; preço(opcional) ; quantidade(opcional)</code>. Preço vazio é puxado da Precificação; quantidade vazia = 0 (estoque zerado).</div>
+        </div>
+    </div>
+    <div class="card__body">
+        <div class="field">
+            <label class="label" for="amz-itens">Itens</label>
+            <textarea id="amz-itens" rows="8" class="select" placeholder="TACN-2812 ; B07MMLZVP4&#10;TACN-2823 ; B00P0E39CM ; 36,74 ; 5"></textarea>
+        </div>
+        <div class="manual-actions mt-3">
+            <button type="button" class="btn btn--dark" id="amz-validar" {% if not amazon_disponivel %}disabled{% endif %}>Validar (não publica)</button>
+            <button type="button" class="btn btn--primary" id="amz-publicar" {% if not amazon_disponivel %}disabled{% endif %}>Publicar de verdade</button>
+        </div>
+    </div>
+</div>
+
+<div id="amz-resultado" class="mt-6"></div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce() }}">
+(function () {
+    const endpoint = "{{ url_for('api_amazon_criar_oferta') }}";
+    const ta = document.getElementById('amz-itens');
+    const host = document.getElementById('amz-resultado');
+
+    function parseLinhas() {
+        return ta.value.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+            const [sku, asin, preco, qtd] = l.split(/[;,\t]/).map(s => (s || '').trim());
+            const item = { sku, asin };
+            if (preco) item.preco = preco.replace(',', '.');
+            if (qtd) item.quantidade = parseInt(qtd, 10) || 0;
+            return item;
+        });
+    }
+
+    async function enviar(publicar) {
+        const itens = parseLinhas();
+        if (!itens.length) { toast('Cole ao menos uma linha (SKU ; ASIN).', 'err'); return; }
+        if (publicar && !confirm(`Publicar ${itens.length} oferta(s) DE VERDADE na Amazon? Esta ação cria anúncios na conta.`)) return;
+
+        const btnV = document.getElementById('amz-validar');
+        const btnP = document.getElementById('amz-publicar');
+        btnV.disabled = btnP.disabled = true;
+        host.innerHTML = '<div class="card"><div class="card__body">Processando ' + itens.length + ' item(ns)…</div></div>';
+        try {
+            const r = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+                body: JSON.stringify({ itens, publicar }),
+            });
+            const data = await r.json();
+            if (!data.sucesso) { host.innerHTML = ''; toast(data.mensagem || 'Falha', 'err'); return; }
+            render(data);
+        } catch (e) {
+            host.innerHTML = ''; toast('Erro de rede: ' + e, 'err');
+        } finally {
+            btnV.disabled = btnP.disabled = false;
+        }
+    }
+
+    function render(data) {
+        const linhas = (data.resultados || []).map(res => {
+            const ok = res.ok;
+            const cor = ok ? 'badge--ok' : 'badge--off';
+            const st = res.status || (ok ? 'OK' : '—');
+            const msgs = [].concat(res.erros || [], (res.avisos || []).map(a => '⚠ ' + a));
+            return `<tr>
+                <td><code>${escape(res.sku || '')}</code></td>
+                <td><code>${escape(res.asin || '')}</code></td>
+                <td>${escape(res.preco || '')}</td>
+                <td><span class="badge ${cor}">${escape(st)}</span></td>
+                <td style="font-size:12px;color:var(--text-muted)">${msgs.map(escape).join('<br>')}</td>
+            </tr>`;
+        }).join('');
+        const okN = (data.resultados || []).filter(r => r.ok).length;
+        host.innerHTML = `
+            <div class="card">
+                <div class="card__header"><div>
+                    <div class="card__title">Resultado — ${escape(data.modo)} (${okN}/${(data.resultados||[]).length} ok)</div>
+                    <div class="card__sub">${data.modo === 'validado' ? 'Validação (nada publicado).' : 'Enviado para a Amazon (processamento assíncrono).'}</div>
+                </div></div>
+                <div class="card__body" style="overflow-x:auto">
+                    <table class="tbl-manual"><thead><tr>
+                        <th>SKU</th><th>ASIN</th><th>Preço</th><th>Status</th><th>Mensagens</th>
+                    </tr></thead><tbody>${linhas}</tbody></table>
+                </div>
+            </div>`;
+    }
+
+    function escape(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+    const bv = document.getElementById('amz-validar');
+    const bp = document.getElementById('amz-publicar');
+    if (bv) bv.addEventListener('click', () => enviar(false));
+    if (bp) bp.addEventListener('click', () => enviar(true));
+})();
+</script>
+{% endblock %}
