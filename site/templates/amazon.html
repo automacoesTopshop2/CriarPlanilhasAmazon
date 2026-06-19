@@ -59,11 +59,18 @@
 <div class="card" id="amz-card-oferta">
     <div class="card__header"><div>
         <div class="card__title">Oferta por ASIN (produto já existente)</div>
-        <div class="card__sub">Uma por linha: <code>SKU ; ASIN ; preço(opcional) ; quantidade(opcional)</code>. Preço vazio é puxado da Precificação; quantidade vazia = 0.</div>
+        <div class="card__sub">Cole <strong>SKU raiz</strong> e <strong>ASIN</strong> (um por linha, na mesma ordem). O preço é puxado da Precificação (conta TACNAR) e o estoque vai como 0.</div>
     </div></div>
     <div class="card__body">
-        <div class="field">
-            <textarea id="amz-oferta-itens" rows="7" class="select" placeholder="TACN-2812 ; B07MMLZVP4&#10;TACN-2823 ; B00P0E39CM ; 36,74 ; 5"></textarea>
+        <div class="grid grid--2">
+            <div class="field">
+                <label class="label" for="amz-oferta-skus">SKU raiz (1 por linha)</label>
+                <textarea id="amz-oferta-skus" rows="8" class="select" placeholder="2812&#10;2823&#10;3026"></textarea>
+            </div>
+            <div class="field">
+                <label class="label" for="amz-oferta-asins">ASIN (1 por linha, mesma ordem)</label>
+                <textarea id="amz-oferta-asins" rows="8" class="select" placeholder="B07MMLZVP4&#10;B00P0E39CM&#10;B07RZK1T3R"></textarea>
+            </div>
         </div>
         <div class="manual-actions mt-3">
             <button type="button" class="btn btn--dark" data-amz-acao="validar" data-amz-fonte="oferta" {% if not amazon_disponivel %}disabled{% endif %}>Validar (não publica)</button>
@@ -130,14 +137,18 @@
     }));
 
     function parseOferta() {
-        return document.getElementById('amz-oferta-itens').value.split('\n')
-            .map(l => l.trim()).filter(Boolean).map(l => {
-                const [sku, asin, preco, qtd] = l.split(/[;\t]/).map(s => (s || '').trim());
-                const it = { sku, asin };
-                if (preco) it.preco = preco.replace(',', '.');
-                if (qtd) it.quantidade = parseInt(qtd, 10) || 0;
-                return it;
-            });
+        // Duas caixas pareadas por linha: SKU raiz | ASIN. Resto vem das planilhas.
+        const skus = document.getElementById('amz-oferta-skus').value.split('\n');
+        const asins = document.getElementById('amz-oferta-asins').value.split('\n');
+        const n = Math.max(skus.length, asins.length);
+        const itens = [];
+        for (let i = 0; i < n; i++) {
+            const sku_raiz = (skus[i] || '').trim();
+            const asin = (asins[i] || '').trim();
+            if (!sku_raiz && !asin) continue;
+            itens.push({ sku_raiz, asin });
+        }
+        return itens;
     }
     function parseProduto() {
         return document.getElementById('amz-prod-itens').value.split('\n')
@@ -154,7 +165,7 @@
         let endpoint, body;
         if (fonte === 'oferta') {
             const itens = parseOferta();
-            if (!itens.length) { toast('Cole ao menos uma linha (SKU ; ASIN).', 'err'); return; }
+            if (!itens.length) { toast('Preencha SKU raiz e ASIN.', 'err'); return; }
             endpoint = epOferta; body = { itens, publicar };
         } else {
             const itens = parseProduto();

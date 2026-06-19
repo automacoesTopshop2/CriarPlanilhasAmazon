@@ -982,10 +982,18 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
         except Exception:
             pass  # sem base de preços local; aceita preço vindo no payload
 
+        # Conta fixa TACNAR por enquanto → prefixo p/ formar o sku_market a partir
+        # do SKU raiz digitado (ex.: "2812" -> "TACN-2812"). Também acha o preço.
+        prefixo_tacnar = next((k for k, v in cfg_atual.mapa_prefixo_conta.items()
+                               if str(v).upper() == "TACNAR"), "TACN-")
         resultados = []
         for it in itens:
             it = it if isinstance(it, dict) else {}
             sku = (it.get("sku") or "").strip()
+            if not sku:
+                raiz = (it.get("sku_raiz") or "").strip()
+                if raiz:
+                    sku = f"{prefixo_tacnar}{raiz}"
             asin = (it.get("asin") or "").strip()
             preco = it.get("preco")
             if preco in (None, ""):
@@ -993,7 +1001,7 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
             qtd = int(it.get("quantidade") or 0)
             if not sku or not asin:
                 resultados.append({"sku": sku, "asin": asin, "ok": False,
-                                   "erros": ["sku e asin são obrigatórios"]})
+                                   "erros": ["SKU raiz e ASIN são obrigatórios"]})
                 continue
             if not preco:
                 resultados.append({"sku": sku, "asin": asin, "ok": False,
