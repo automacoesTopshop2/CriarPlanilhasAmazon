@@ -20,7 +20,7 @@
 {% block content %}
 <div class="page-header">
     <h1>Criar anúncio direto na Amazon (via API)</h1>
-    <p>Cria ofertas por ASIN (produto já existente no catálogo) na conta conectada, usando a SP-API. Comece em <strong>Validar</strong> (não publica) e só então <strong>Publicar</strong>.</p>
+    <p>Conta <strong>TACNAR</strong>. Comece sempre em <strong>Validar</strong> (não publica) e só então <strong>Publicar</strong>.</p>
 </div>
 
 {% if not amazon_disponivel %}
@@ -31,45 +31,80 @@
         </div>
         <div>
             <div class="fw-600">Credenciais da Amazon não configuradas no servidor</div>
-            <div class="text-muted text-sm mt-2">Defina <code>AMAZON_LWA_CLIENT_ID</code>, <code>AMAZON_LWA_CLIENT_SECRET</code>, <code>AMAZON_SP_REFRESH_TOKEN</code> e <code>AMAZON_SELLER_ID</code> no ambiente (Railway/.env).</div>
+            <div class="text-muted text-sm mt-2">Defina <code>AMAZON_LWA_CLIENT_ID</code>, <code>AMAZON_LWA_CLIENT_SECRET</code>, <code>AMAZON_SP_REFRESH_TOKEN</code> e <code>AMAZON_SELLER_ID</code>.</div>
         </div>
     </div>
 </div>
 {% endif %}
 
-<div class="card">
-    <div class="card__header">
-        <div>
-            <div class="card__title">Ofertas por ASIN</div>
-            <div class="card__sub">Uma por linha: <code>SKU ; ASIN ; preço(opcional) ; quantidade(opcional)</code>. Preço vazio é puxado da Precificação; quantidade vazia = 0 (estoque zerado).</div>
+<!-- Conta (fixa por enquanto) + modo -->
+<div class="grid grid--2 mb-6">
+    <div class="field">
+        <label class="label" for="amz-conta">Conta</label>
+        <select id="amz-conta" class="select" disabled>
+            <option value="TACNAR" selected>TACNAR (Modelo normal)</option>
+        </select>
+        <span class="label__hint">Por enquanto só a TACNAR tem API conectada.</span>
+    </div>
+    <div class="field">
+        <label class="label">Modo de criação</label>
+        <div class="modo-tabs" role="tablist">
+            <button type="button" class="modo-tabs__tab is-active" data-amz-modo="oferta" role="tab" aria-selected="true">Oferta por ASIN</button>
+            <button type="button" class="modo-tabs__tab" data-amz-modo="produto" role="tab" aria-selected="false">Criar do zero</button>
         </div>
     </div>
+</div>
+
+<!-- ===== Modo OFERTA por ASIN ===== -->
+<div class="card" id="amz-card-oferta">
+    <div class="card__header"><div>
+        <div class="card__title">Oferta por ASIN (produto já existente)</div>
+        <div class="card__sub">Uma por linha: <code>SKU ; ASIN ; preço(opcional) ; quantidade(opcional)</code>. Preço vazio é puxado da Precificação; quantidade vazia = 0.</div>
+    </div></div>
+    <div class="card__body">
+        <div class="field">
+            <textarea id="amz-oferta-itens" rows="7" class="select" placeholder="TACN-2812 ; B07MMLZVP4&#10;TACN-2823 ; B00P0E39CM ; 36,74 ; 5"></textarea>
+        </div>
+        <div class="manual-actions mt-3">
+            <button type="button" class="btn btn--dark" data-amz-acao="validar" data-amz-fonte="oferta" {% if not amazon_disponivel %}disabled{% endif %}>Validar (não publica)</button>
+            <button type="button" class="btn btn--primary" data-amz-acao="publicar" data-amz-fonte="oferta" {% if not amazon_disponivel %}disabled{% endif %}>Publicar de verdade</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== Modo CRIAR DO ZERO (produto novo) ===== -->
+<div class="card hide" id="amz-card-produto">
+    <div class="card__header"><div>
+        <div class="card__title">Criar do zero (produto novo)</div>
+        <div class="card__sub">Título, descrição e marcadores vêm da base de Descrição e são <strong>limpos automaticamente</strong> (módulo de Limpeza). EAN e marca você informa. Atributos de conformidade da categoria são preenchidos sozinhos.</div>
+    </div></div>
     <div class="card__body">
         <div class="grid grid--2">
             <div class="field">
-                <label class="label" for="amz-conta">Conta</label>
-                <select id="amz-conta" class="select" disabled>
-                    <option value="TACNAR" selected>TACNAR (Modelo normal)</option>
+                <label class="label" for="amz-prod-categoria">Categoria</label>
+                <select id="amz-prod-categoria" class="select">
+                    <option value="padrao">Padrão (AUDIO_OR_VIDEO)</option>
+                    <option value="brinquedos">Brinquedos (TOYS_AND_GAMES)</option>
+                    <option value="potes">Potes de Vidro (HOME)</option>
+                    <option value="suplementos">Suplementos / Porta-cápsulas (sensível)</option>
                 </select>
-                <span class="label__hint">Por enquanto só a TACNAR tem API conectada. Mais contas no futuro.</span>
             </div>
             <div class="field">
-                <label class="label">Modo de criação</label>
-                <select class="select" disabled>
-                    <option selected>Oferta por ASIN (produto já existente)</option>
-                    <option disabled>Criar do zero (produto novo) — em breve</option>
-                </select>
-                <span class="label__hint">Hoje só oferta por ASIN. "Do zero" usará títulos já limpos (módulo de Limpeza).</span>
+                <label class="label" for="amz-prod-marca">Marca padrão</label>
+                <input id="amz-prod-marca" type="text" class="select" placeholder="Ex.: 1Hora">
+                <span class="label__hint">Usada quando a linha não trouxer marca.</span>
             </div>
         </div>
         <div class="field mt-6">
-            <label class="label" for="amz-itens">Itens</label>
-            <textarea id="amz-itens" rows="8" class="select" placeholder="TACN-2812 ; B07MMLZVP4&#10;TACN-2823 ; B00P0E39CM ; 36,74 ; 5"></textarea>
+            <label class="label" for="amz-prod-itens">Itens</label>
+            <textarea id="amz-prod-itens" rows="7" class="select" placeholder="TACN-5675 ; 6974368771053&#10;TACN-1234 ; 7891234567890 ; MinhaMarca ; 99,90"></textarea>
+            <span class="label__hint">Uma por linha: <code>SKU ; EAN ; marca(opcional) ; preço(opcional)</code></span>
         </div>
         <div class="manual-actions mt-3">
-            <button type="button" class="btn btn--dark" id="amz-validar" {% if not amazon_disponivel %}disabled{% endif %}>Validar (não publica)</button>
-            <button type="button" class="btn btn--primary" id="amz-publicar" {% if not amazon_disponivel %}disabled{% endif %}>Publicar de verdade</button>
+            <button type="button" class="btn btn--dark" data-amz-acao="validar" data-amz-fonte="produto" {% if not amazon_disponivel %}disabled{% endif %}>Validar (não publica)</button>
+            <button type="button" class="btn btn--primary" data-amz-acao="publicar" data-amz-fonte="produto" {% if not amazon_disponivel %}disabled{% endif %}>Publicar de verdade</button>
         </div>
+        <div class="text-muted text-sm mt-3">⚠️ A conta de teste pode não ter permissão para criar do zero com marca — use <strong>Validar</strong> para conferir os atributos (a publicação pode ser recusada pela Amazon).</div>
     </div>
 </div>
 
@@ -79,69 +114,103 @@
 {% block extra_scripts %}
 <script nonce="{{ csp_nonce() }}">
 (function () {
-    const endpoint = "{{ url_for('api_amazon_criar_oferta') }}";
-    const ta = document.getElementById('amz-itens');
+    const epOferta = "{{ url_for('api_amazon_criar_oferta') }}";
+    const epProduto = "{{ url_for('api_amazon_criar_produto') }}";
     const host = document.getElementById('amz-resultado');
 
-    function parseLinhas() {
-        return ta.value.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
-            const [sku, asin, preco, qtd] = l.split(/[;,\t]/).map(s => (s || '').trim());
-            const item = { sku, asin };
-            if (preco) item.preco = preco.replace(',', '.');
-            if (qtd) item.quantidade = parseInt(qtd, 10) || 0;
-            return item;
-        });
+    // Alterna modo oferta / produto
+    const tabs = document.querySelectorAll('[data-amz-modo]');
+    const cardOferta = document.getElementById('amz-card-oferta');
+    const cardProduto = document.getElementById('amz-card-produto');
+    tabs.forEach(t => t.addEventListener('click', () => {
+        tabs.forEach(x => { const on = x === t; x.classList.toggle('is-active', on); x.setAttribute('aria-selected', on ? 'true' : 'false'); });
+        const modo = t.getAttribute('data-amz-modo');
+        cardOferta.classList.toggle('hide', modo !== 'oferta');
+        cardProduto.classList.toggle('hide', modo !== 'produto');
+    }));
+
+    function parseOferta() {
+        return document.getElementById('amz-oferta-itens').value.split('\n')
+            .map(l => l.trim()).filter(Boolean).map(l => {
+                const [sku, asin, preco, qtd] = l.split(/[;\t]/).map(s => (s || '').trim());
+                const it = { sku, asin };
+                if (preco) it.preco = preco.replace(',', '.');
+                if (qtd) it.quantidade = parseInt(qtd, 10) || 0;
+                return it;
+            });
+    }
+    function parseProduto() {
+        return document.getElementById('amz-prod-itens').value.split('\n')
+            .map(l => l.trim()).filter(Boolean).map(l => {
+                const [sku, ean, marca, preco] = l.split(/[;\t]/).map(s => (s || '').trim());
+                const it = { sku, ean };
+                if (marca) it.marca = marca;
+                if (preco) it.preco = preco.replace(',', '.');
+                return it;
+            });
     }
 
-    async function enviar(publicar) {
-        const itens = parseLinhas();
-        if (!itens.length) { toast('Cole ao menos uma linha (SKU ; ASIN).', 'err'); return; }
-        if (publicar && !confirm(`Publicar ${itens.length} oferta(s) DE VERDADE na Amazon? Esta ação cria anúncios na conta.`)) return;
+    async function enviar(fonte, publicar) {
+        let endpoint, body;
+        if (fonte === 'oferta') {
+            const itens = parseOferta();
+            if (!itens.length) { toast('Cole ao menos uma linha (SKU ; ASIN).', 'err'); return; }
+            endpoint = epOferta; body = { itens, publicar };
+        } else {
+            const itens = parseProduto();
+            if (!itens.length) { toast('Cole ao menos uma linha (SKU ; EAN).', 'err'); return; }
+            endpoint = epProduto;
+            body = {
+                itens, publicar,
+                categoria: document.getElementById('amz-prod-categoria').value,
+                marca: document.getElementById('amz-prod-marca').value.trim(),
+            };
+        }
+        if (publicar && !confirm(`Publicar ${body.itens.length} item(ns) DE VERDADE na Amazon (conta TACNAR)?`)) return;
 
-        const btnV = document.getElementById('amz-validar');
-        const btnP = document.getElementById('amz-publicar');
-        btnV.disabled = btnP.disabled = true;
-        host.innerHTML = '<div class="card"><div class="card__body">Processando ' + itens.length + ' item(ns)…</div></div>';
+        document.querySelectorAll('[data-amz-acao]').forEach(b => b.disabled = true);
+        host.innerHTML = '<div class="card"><div class="card__body">Processando ' + body.itens.length + ' item(ns)…</div></div>';
         try {
             const r = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
-                body: JSON.stringify({ itens, publicar }),
+                body: JSON.stringify(body),
             });
             const data = await r.json();
             if (!data.sucesso) { host.innerHTML = ''; toast(data.mensagem || 'Falha', 'err'); return; }
-            render(data);
+            render(data, fonte);
         } catch (e) {
             host.innerHTML = ''; toast('Erro de rede: ' + e, 'err');
         } finally {
-            btnV.disabled = btnP.disabled = false;
+            document.querySelectorAll('[data-amz-acao]').forEach(b => b.disabled = false);
         }
     }
 
-    function render(data) {
+    function render(data, fonte) {
         const linhas = (data.resultados || []).map(res => {
-            const ok = res.ok;
-            const cor = ok ? 'badge--ok' : 'badge--off';
-            const st = res.status || (ok ? 'OK' : '—');
+            const cor = res.ok ? 'badge--ok' : 'badge--off';
+            const st = res.status || (res.ok ? 'OK' : '—');
             const msgs = [].concat(res.erros || [], (res.avisos || []).map(a => '⚠ ' + a));
+            const col2 = fonte === 'oferta' ? (res.asin || '') : (res.ean || '');
             return `<tr>
                 <td><code>${escape(res.sku || '')}</code></td>
-                <td><code>${escape(res.asin || '')}</code></td>
-                <td>${escape(res.preco || '')}</td>
+                <td><code>${escape(col2)}</code></td>
                 <td><span class="badge ${cor}">${escape(st)}</span></td>
                 <td style="font-size:12px;color:var(--text-muted)">${msgs.map(escape).join('<br>')}</td>
             </tr>`;
         }).join('');
         const okN = (data.resultados || []).filter(r => r.ok).length;
+        const head2 = fonte === 'oferta' ? 'ASIN' : 'EAN';
+        const cat = data.categoria ? ' · ' + escape(data.categoria) : '';
         host.innerHTML = `
             <div class="card">
                 <div class="card__header"><div>
-                    <div class="card__title">Resultado — ${escape(data.modo)} (${okN}/${(data.resultados||[]).length} ok)</div>
+                    <div class="card__title">Resultado — ${escape(data.modo)}${cat} (${okN}/${(data.resultados||[]).length} ok)</div>
                     <div class="card__sub">${data.modo === 'validado' ? 'Validação (nada publicado).' : 'Enviado para a Amazon (processamento assíncrono).'}</div>
                 </div></div>
                 <div class="card__body" style="overflow-x:auto">
                     <table class="tbl-manual"><thead><tr>
-                        <th>SKU</th><th>ASIN</th><th>Preço</th><th>Status</th><th>Mensagens</th>
+                        <th>SKU</th><th>${head2}</th><th>Status</th><th>Mensagens</th>
                     </tr></thead><tbody>${linhas}</tbody></table>
                 </div>
             </div>`;
@@ -149,10 +218,8 @@
 
     function escape(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
-    const bv = document.getElementById('amz-validar');
-    const bp = document.getElementById('amz-publicar');
-    if (bv) bv.addEventListener('click', () => enviar(false));
-    if (bp) bp.addEventListener('click', () => enviar(true));
+    document.querySelectorAll('[data-amz-acao]').forEach(btn => btn.addEventListener('click', () =>
+        enviar(btn.getAttribute('data-amz-fonte'), btn.getAttribute('data-amz-acao') === 'publicar')));
 })();
 </script>
 {% endblock %}

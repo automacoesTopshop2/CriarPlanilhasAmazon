@@ -310,6 +310,16 @@ class ProcessadorLimpeza(ProcessadorBase):
         # Remove duplicatas
         return list(set(colunas))
     
+    def limpar_texto(self, texto: str) -> str:
+        """Aplica as regras de limpeza a um texto avulso (uso fora da planilha,
+        ex.: limpar título/descrição/bullets antes de criar anúncio via API).
+        Carrega os termos automaticamente na primeira chamada."""
+        if not isinstance(texto, str) or not texto:
+            return texto or ""
+        if not self._termos_remover and not self._termos_substituir:
+            self.carregar_termos()
+        return self._limpar_texto(texto)
+
     def _limpar_texto(self, texto: str) -> str:
         """
         Aplica todas as regras de limpeza ao texto.

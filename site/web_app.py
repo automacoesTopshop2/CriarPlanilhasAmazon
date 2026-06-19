@@ -45,7 +45,8 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from core.config import Configuracoes
 from core.config_manager import GerenciadorConfig
 from core.processadores import ProcessadorSKU, ProcessadorASIN, ProcessadorLimpeza
-from core.carregadores import CarregadorPrecos
+from core.carregadores import CarregadorPrecos, CarregadorDescricao, CarregadorDescricaoAPI
+from core import amazon_categorias
 from core.utils import Utilitarios
 from core import bdamazon_client
 from core import amazon_sp_client, amazon_listings
@@ -1007,6 +1008,89 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
             except amazon_sp_client.AmazonSPError as e:
                 resultados.append({"sku": sku, "asin": asin, "ok": False, "erros": [str(e)[:300]]})
         return jsonify({"sucesso": True,
+                        "modo": "publicado" if publicar else "validado",
+                        "resultados": resultados})
+
+    @app.route("/api/amazon/criar-produto", methods=["POST"])
+    @login_required
+    def api_amazon_criar_produto():
+        """Cria/valida PRODUTOS NOVOS (do zero) na Amazon via SP-API.
+
+        Body: {categoria, itens:[{sku, ean, marca?, preco?, quantidade?}], publicar:bool}.
+        Para cada SKU: puxa título/descrição/bullets/dimensões da base de Descrição
+        (API AgentedeTitulos ou planilha), **limpa** os textos (módulo de Limpeza),
+        aplica os atributos fixos da categoria e valida/cria. EAN e marca vêm do
+        operador. `publicar=false` (default) = VALIDATION_PREVIEW.
+        """
+        if not amazon_sp_client.credenciais_ok():
+            return jsonify({"sucesso": False,
+                            "mensagem": "Credenciais da Amazon SP-API não configuradas no servidor."}), 503
+        data = request.get_json(silent=True) or {}
+        categoria = (data.get("categoria") or "").strip().lower()
+        itens = data.get("itens")
+        if categoria not in amazon_categorias.PRODUCT_TYPE:
+            return jsonify({"sucesso": False,
+                            "mensagem": f"categoria inválida: {categoria!r}."}), 400
+        if not isinstance(itens, list) or not itens:
+            return jsonify({"sucesso": False, "mensagem": "'itens' precisa ser uma lista não-vazia."}), 400
+        publicar = bool(data.get("publicar"))
+        modo = None if publicar else "VALIDATION_PREVIEW"
+        marca_padrao = (data.get("marca") or "").strip()
+
+        cfg_atual = app.config.get("APP_CONFIG", config)
+        cp = CarregadorPrecos(cfg_atual)
+        try:
+            cp.carregar()
+        except Exception:
+            pass
+        cd = (CarregadorDescricaoAPI(cfg_atual) if getattr(cfg_atual, "usar_api_descricao", False)
+              else CarregadorDescricao(cfg_atual))
+        try:
+            cd.carregar()
+        except Exception as e:
+            return jsonify({"sucesso": False,
+                            "mensagem": f"Falha ao carregar base de Descrição: {e}"}), 502
+        limp = ProcessadorLimpeza(cfg_atual)
+        limp.carregar_termos()
+
+        resultados = []
+        for it in itens:
+            it = it if isinstance(it, dict) else {}
+            sku = (it.get("sku") or "").strip()
+            ean = (it.get("ean") or "").strip()
+            marca = (it.get("marca") or "").strip() or marca_padrao
+            if not sku or not ean:
+                resultados.append({"sku": sku, "ok": False, "erros": ["sku e EAN são obrigatórios"]})
+                continue
+            prod = cd.obter_produto(sku)
+            if not prod or not prod.titulo:
+                resultados.append({"sku": sku, "ok": False,
+                                   "erros": ["produto não encontrado na base de Descrição (título ausente)"]})
+                continue
+            preco = it.get("preco")
+            if preco in (None, ""):
+                preco = cp.obter_preco(sku) if cp.esta_carregado else None
+            qtd = int(it.get("quantidade") or 0)
+            sku_base = Utilitarios.tratar_sku(sku, list(cfg_atual.mapa_prefixo_conta.keys())) or sku
+            img = f"{cfg_atual.url_base_imagens}/{sku_base}/{sku_base}_01.jpg"
+            # Limpa os textos (mesmo módulo da aba Limpeza) antes de enviar.
+            titulo = limp.limpar_texto(prod.titulo)
+            descricao = limp.limpar_texto(prod.descricao)
+            bullets = [limp.limpar_texto(b) for b in (prod.topicos or []) if b]
+            try:
+                resp = amazon_listings.criar_produto_por_sku(
+                    sku=sku, categoria=categoria, titulo=titulo, descricao=descricao,
+                    bullets=bullets, marca=marca, ean=ean,
+                    preco=(float(preco) if preco not in (None, "") else None),
+                    quantidade=qtd, peso_kg=prod.peso, comprimento_cm=prod.comprimento,
+                    largura_cm=prod.largura, altura_cm=prod.altura,
+                    imagem_principal_url=img, mode=modo)
+                r = amazon_listings.resumo_issues(resp)
+                resultados.append({"sku": sku, "ean": ean, "marca": marca,
+                                   "ok": r["total_erros"] == 0, **r})
+            except amazon_sp_client.AmazonSPError as e:
+                resultados.append({"sku": sku, "ok": False, "erros": [str(e)[:300]]})
+        return jsonify({"sucesso": True, "categoria": categoria,
                         "modo": "publicado" if publicar else "validado",
                         "resultados": resultados})
 
