@@ -652,6 +652,9 @@
             const modo = tab.getAttribute('data-modo');
             cardPlanilha.classList.toggle('hide', modo !== 'planilha');
             cardManual.classList.toggle('hide', modo !== 'manual');
+            // Elementos que só fazem sentido no modo Planilha (steps, info-card).
+            document.querySelectorAll('[data-so-planilha]').forEach(el =>
+                el.classList.toggle('hide', modo !== 'planilha'));
         }));
 
         const tbody = document.getElementById(opts.tbodyId || 'tbl-manual-body');

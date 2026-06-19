@@ -27,12 +27,12 @@
 
 <!-- ============= MODO ============= -->
 <div class="modo-tabs" role="tablist" aria-label="Modo de entrada">
-    <button type="button" class="modo-tabs__tab is-active" data-modo="planilha" role="tab" aria-selected="true">Planilha</button>
-    <button type="button" class="modo-tabs__tab" data-modo="manual" role="tab" aria-selected="false">Manual (BDAmazon)</button>
+    <button type="button" class="modo-tabs__tab is-active" data-modo="manual" role="tab" aria-selected="true">Criar via BDAmazon</button>
+    <button type="button" class="modo-tabs__tab" data-modo="planilha" role="tab" aria-selected="false">Criar via Planilha</button>
 </div>
 
-<!-- ============= STEPS ============= -->
-<div class="steps">
+<!-- ============= STEPS (só no modo Planilha) ============= -->
+<div class="steps hide" data-so-planilha>
     <div class="step is-active" data-step="1">
         <span class="step__num">1</span>
         <span>Categoria</span>
@@ -50,7 +50,7 @@
 </div>
 
 <!-- ============= FORM (modo planilha) ============= -->
-<div class="card" id="card-planilha">
+<div class="card hide" id="card-planilha">
     <div class="card__header">
         <div>
             <div class="card__title">Configuração da criação</div>
@@ -97,7 +97,7 @@
 </div>
 
 <!-- ============= FORM (modo manual) ============= -->
-<div class="card hide" id="card-manual">
+<div class="card" id="card-manual">
     <div class="card__header">
         <div>
             <div class="card__title">Entrada manual (cria SKU no BDAmazon)</div>

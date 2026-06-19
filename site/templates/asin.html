@@ -18,11 +18,11 @@
 
 <!-- ============= MODO ============= -->
 <div class="modo-tabs" role="tablist" aria-label="Modo de entrada">
-    <button type="button" class="modo-tabs__tab is-active" data-modo="planilha" role="tab" aria-selected="true">Planilha</button>
-    <button type="button" class="modo-tabs__tab" data-modo="manual" role="tab" aria-selected="false">Manual (BDAmazon)</button>
+    <button type="button" class="modo-tabs__tab is-active" data-modo="manual" role="tab" aria-selected="true">Criar via BDAmazon</button>
+    <button type="button" class="modo-tabs__tab" data-modo="planilha" role="tab" aria-selected="false">Criar via Planilha</button>
 </div>
 
-<div class="card mb-6" id="card-info-planilha">
+<div class="card mb-6 hide" id="card-info-planilha" data-so-planilha>
     <div class="card__body info-card-row">
         <div class="info-card-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -38,7 +38,7 @@
 </div>
 
 <!-- ============= MODO PLANILHA ============= -->
-<div class="card" id="card-planilha">
+<div class="card hide" id="card-planilha">
     <div class="card__header">
         <div>
             <div class="card__title">Arquivos</div>
@@ -68,7 +68,7 @@
 </div>
 
 <!-- ============= MODO MANUAL ============= -->
-<div class="card hide" id="card-manual">
+<div class="card" id="card-manual">
     <div class="card__header">
         <div>
             <div class="card__title">Entrada manual (cria SKU no BDAmazon com ASIN)</div>

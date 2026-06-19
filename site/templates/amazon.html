@@ -45,7 +45,24 @@
         </div>
     </div>
     <div class="card__body">
-        <div class="field">
+        <div class="grid grid--2">
+            <div class="field">
+                <label class="label" for="amz-conta">Conta</label>
+                <select id="amz-conta" class="select" disabled>
+                    <option value="TACNAR" selected>TACNAR (Modelo normal)</option>
+                </select>
+                <span class="label__hint">Por enquanto só a TACNAR tem API conectada. Mais contas no futuro.</span>
+            </div>
+            <div class="field">
+                <label class="label">Modo de criação</label>
+                <select class="select" disabled>
+                    <option selected>Oferta por ASIN (produto já existente)</option>
+                    <option disabled>Criar do zero (produto novo) — em breve</option>
+                </select>
+                <span class="label__hint">Hoje só oferta por ASIN. "Do zero" usará títulos já limpos (módulo de Limpeza).</span>
+            </div>
+        </div>
+        <div class="field mt-6">
             <label class="label" for="amz-itens">Itens</label>
             <textarea id="amz-itens" rows="8" class="select" placeholder="TACN-2812 ; B07MMLZVP4&#10;TACN-2823 ; B00P0E39CM ; 36,74 ; 5"></textarea>
         </div>

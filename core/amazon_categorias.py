@@ -25,8 +25,15 @@ PRODUCT_TYPE: dict[str, str] = {
     "padrao": "AUDIO_OR_VIDEO",       # Criar Padrão (a maioria dos produtos)
     "brinquedos": "TOYS_AND_GAMES",
     "potes": "HOME",                  # Potes de Vidro (genérico HOME)
-    "suplementos": "NUTRITIONAL_SUPPLEMENT",
+    # "suplementos": criamos como PORTA-CÁPSULAS (porta-cápsulas é o produto
+    # principal; o suplemento vai de brinde). Categoria SENSÍVEL — manter
+    # subutilizada por enquanto (não habilitar no fluxo padrão).
+    "suplementos": "PERSONAL_PILL_DISPENSER",
 }
+
+# Categorias sensíveis: criação do zero exige cuidado extra; deixadas
+# subutilizadas até validarmos bem (ex.: porta-cápsulas/suplemento).
+CATEGORIAS_SENSIVEIS = {"suplementos"}
 
 # Browse node recomendado (obrigatório p/ saúde/suplementos no marketplace BR).
 # Para AUDIO/TOYS/HOME a SP-API NÃO exige recommended_browse_nodes na raiz.
