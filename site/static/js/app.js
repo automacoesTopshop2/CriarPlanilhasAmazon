@@ -15,6 +15,9 @@
         const m = document.querySelector('meta[name="csrf-token"]');
         return m ? m.getAttribute('content') : '';
     }
+    // Exposto para scripts inline de páginas (ex.: amazon.html) que rodam fora
+    // deste IIFE — sem isto, `csrf()` é ReferenceError nesses escopos.
+    window.csrf = csrf;
 
     // ---------- Toasts ----------
     const toastHost = () => document.getElementById('toast-host');

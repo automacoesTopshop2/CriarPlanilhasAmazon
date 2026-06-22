@@ -124,6 +124,11 @@
     const epOferta = "{{ url_for('api_amazon_criar_oferta') }}";
     const epProduto = "{{ url_for('api_amazon_criar_produto') }}";
     const host = document.getElementById('amz-resultado');
+    // csrf() vem do app.js (window.csrf); fallback local lê o meta diretamente.
+    const csrf = window.csrf || function () {
+        const m = document.querySelector('meta[name="csrf-token"]');
+        return m ? m.getAttribute('content') : '';
+    };
 
     // Alterna modo oferta / produto
     const tabs = document.querySelectorAll('[data-amz-modo]');
