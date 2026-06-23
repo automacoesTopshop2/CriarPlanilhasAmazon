@@ -1,86 +1,56 @@
 {% extends "base.html" %}
-{% block title %}Criar por ASIN · Planilhas Amazon{% endblock %}
+{% block title %}Criar FULL · Planilhas Amazon{% endblock %}
 
 {% block breadcrumb %}
 <span class="topbar__crumb">Sistema</span>
 <span class="topbar__chev">/</span>
 <a href="{{ url_for('home') }}" class="topbar__crumb">Módulos</a>
 <span class="topbar__chev">/</span>
-<span class="topbar__crumb topbar__crumb--current">Criar por ASIN</span>
+<span class="topbar__crumb topbar__crumb--current">Criar FULL</span>
 {% endblock %}
 
 {% block content %}
 
 <div class="page-header">
-    <h1>Criar planilha por ASIN</h1>
-    <p>Pipeline rápido para vincular ASINs já catalogados — preenche somente preço, dimensões e peso.</p>
+    <h1>Criar planilha FULL</h1>
+    <p>Modalidade <strong>Logística da Amazon (FBA)</strong> com contas <strong>CONTA-CLA</strong>. Usa a Precificação Full (aba CLA), traz o NCM da Drop-estoque e ajusta o canal e o modelo de envio — isolada do modelo padrão.</p>
 </div>
 
 {% include "_alerta_precificacao.html" %}
 
-<!-- ============= MODO ============= -->
-<div class="modo-tabs" role="tablist" aria-label="Modo de entrada">
-    <button type="button" class="modo-tabs__tab is-active" data-modo="manual" role="tab" aria-selected="true">Criar via BDAmazon</button>
-    <button type="button" class="modo-tabs__tab" data-modo="planilha" role="tab" aria-selected="false">Criar via Planilha</button>
-</div>
-
-<div class="card mb-6 hide" id="card-info-planilha" data-so-planilha>
+<!-- ============= INFO: divergências do FULL ============= -->
+<div class="card mb-6">
     <div class="card__body info-card-row">
         <div class="info-card-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
         </div>
         <div>
-            <div class="fw-600">Formato esperado</div>
+            <div class="fw-600">O que o FULL preenche diferente</div>
             <div class="text-muted text-sm mt-2">
-                A planilha de entrada deve ter <strong>Coluna A = ASIN</strong> e <strong>Coluna B = SKU</strong>.
-                O template ListaASINS deve estar no formato <code>.xlsm</code>.
+                <strong>Preço:</strong> aba <code>CLA</code> da Precificação Full ·
+                <strong>NCM:</strong> da Drop-estoque (sem pontos) ·
+                <strong>Origem da mercadoria:</strong> <code>1</code> ·
+                <strong>Canal:</strong> <code>Logística da Amazon (AN)</code> ·
+                <strong>Modelo de Envio:</strong> <code>Modelo padrão da Amazon</code> ·
+                <strong>Quantidade:</strong> <code>0</code>.
+                <br>Contas <strong>Verdal</strong> e <strong>Tacnar</strong> ainda não têm coluna de preço — o preço sai vazio nessas.
             </div>
         </div>
     </div>
 </div>
 
-<!-- ============= MODO PLANILHA ============= -->
-<div class="card hide" id="card-planilha">
-    <div class="card__header">
-        <div>
-            <div class="card__title">Arquivos</div>
-            <div class="card__sub">Envie a lista de ASINs e o template ListaASINS.</div>
-        </div>
-    </div>
-    <div class="card__body">
-        <div class="grid grid--2">
-            <div class="field">
-                <span class="label">1. Lista ASINs (CriarASIN.xlsx)</span>
-                {% include "_dropzone.html" %}
-            </div>
-            <div class="field">
-                <span class="label">2. Modelo ListaASINS (.xlsm)</span>
-                {% with id_suffix="template", accept=".xlsm", label="Solte o template Amazon", sublabel="ou clique para selecionar (.xlsm)" %}
-                    {% include "_dropzone.html" %}
-                {% endwith %}
-            </div>
-        </div>
-    </div>
-    <div class="card__footer">
-        <button id="btn-processar" class="btn btn--primary" disabled>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            Processar ASINs
-        </button>
-    </div>
-</div>
-
-<!-- ============= MODO MANUAL ============= -->
+<!-- ============= ENTRADA MANUAL (via BDAmazon) ============= -->
 <div class="card" id="card-manual">
     <div class="card__header">
         <div>
-            <div class="card__title">Entrada manual (cria SKU no BDAmazon com ASIN)</div>
-            <div class="card__sub">Digite ASIN, SKU Raiz, conta e marca. O sistema chama a API do BDAmazon para gerar o <code>sku_market</code> vinculado ao ASIN e preenche o template ListaASINS.</div>
+            <div class="card__title">Entrada (cria SKU CLA no BDAmazon com ASIN)</div>
+            <div class="card__sub">Digite ASIN, SKU Raiz e a conta <strong>CLA</strong>. O sistema chama a API do BDAmazon para gerar o <code>sku_market</code> (ex.: <code>BOX-CLA-3047</code>) vinculado ao ASIN e preenche o template ListaASINS no formato FULL.</div>
         </div>
     </div>
 
     <div class="card__body">
         <div class="field">
-            <label class="label" for="manual-conta-default">Conta (padrão p/ novas linhas)</label>
+            <label class="label" for="manual-conta-default">Conta CLA (padrão p/ novas linhas)</label>
             <div class="input-with-btn">
                 <select id="manual-conta-default" class="select">
                     <option value="">— carregando contas… —</option>
@@ -99,7 +69,7 @@
             </div>
             <div class="field">
                 <label class="label" for="manual-lote">SKU Raiz (1 por linha, mesma ordem)</label>
-                <textarea id="manual-lote" rows="6" class="select" placeholder="ABC123&#10;XYZ987&#10;..."></textarea>
+                <textarea id="manual-lote" rows="6" class="select" placeholder="3047&#10;9652&#10;..."></textarea>
             </div>
             <div class="field">
                 <label class="label">Template ListaASINS (.xlsm)</label>
@@ -123,7 +93,7 @@
                     <th style="width:48px">#</th>
                     <th>ASIN</th>
                     <th>SKU Raiz</th>
-                    <th style="width:28%">Conta</th>
+                    <th style="width:28%">Conta CLA</th>
                     <th style="width:20%">SKU Market</th>
                     <th style="width:48px"></th>
                 </tr>
@@ -137,7 +107,7 @@
     <div class="card__footer">
         <button id="btn-processar-manual" class="btn btn--primary" disabled>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            Gerar planilha Amazon
+            Gerar planilha FULL
         </button>
         <span class="card__sub" style="margin-left:12px">
             Clique em <strong>Solicitar</strong> em cada linha para registrar o ASIN+SKU no BDAmazon antes.
@@ -167,15 +137,11 @@
 {% block extra_scripts %}
 <script nonce="{{ csp_nonce() }}">
     window.__basesStatus = {{ {'precificacao': bases.precificacao.existe, 'descricao': bases.descricao.existe}|tojson }};
-    initProcessamento({
-        endpoint: "{{ url_for('api_processar_asin') }}",
-        camposArquivos: { arquivo_entrada: 'entrada', arquivo_template: 'template' },
-    });
     initEntradaManual({
         endpointContas: "{{ url_for('api_bdamazon_contas') }}",
         endpointCriarSku: "{{ url_for('api_bdamazon_criar_sku') }}",
         endpointCriarLote: "{{ url_for('api_bdamazon_criar_sku_lote') }}",
-        endpointProcessar: "{{ url_for('api_processar_asin_manual') }}",
+        endpointProcessar: "{{ url_for('api_processar_full_manual') }}",
         templateField: "template-manual",
         comAsin: true,
         comMarcaEan: false,

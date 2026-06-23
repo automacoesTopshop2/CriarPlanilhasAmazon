@@ -1,0 +1,68 @@
+{# Alerta de frescor da base de preços. Requer no contexto:
+   - status_precificacao: dict por chave (de _status_precificacao_br)
+   - precif_chave: 'precificacao' | 'precificacao_full'
+#}
+{% set _st = (status_precificacao or {}).get(precif_chave) %}
+<div class="card mb-6" id="alerta-precificacao"
+     data-chave="{{ precif_chave }}"
+     data-status-url="{{ url_for('api_precificacao_status') }}">
+    <div class="card__body info-card-row">
+        <div class="info-card-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <div>
+            <div class="fw-600">Base de preços</div>
+            <div class="text-muted text-sm mt-2" id="alerta-precificacao-texto">
+                {% if _st and _st.editado_em %}
+                    <strong>{{ _st.label }}</strong> — última atualização na planilha (origem):
+                    <strong>{{ _st.editado_em }}</strong> (horário de Brasília){% if _st.baixado_em %} · baixada em {{ _st.baixado_em }}{% endif %}.
+                {% elif _st and _st.configurado %}
+                    Verificando atualização de <strong>{{ _st.label }}</strong> no SharePoint…
+                {% else %}
+                    Sincronização automática não configurada — usando o arquivo local mais recente.
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+<script nonce="{{ csp_nonce() }}">
+(function () {
+    var el = document.getElementById('alerta-precificacao');
+    if (!el) return;
+    var txt = document.getElementById('alerta-precificacao-texto');
+    var chave = el.getAttribute('data-chave');
+    var url = el.getAttribute('data-status-url');
+
+    function frase(st) {
+        if (!st) return null;
+        if (st.editado_em) {
+            var s = '<strong>' + st.label + '</strong> — última atualização na planilha (origem): '
+                  + '<strong>' + st.editado_em + '</strong> (horário de Brasília)';
+            if (st.baixado_em) s += ' · baixada em ' + st.baixado_em;
+            return s + '.';
+        }
+        if (st.configurado) return 'Verificando atualização de <strong>' + st.label + '</strong> no SharePoint…';
+        return 'Sincronização automática não configurada — usando o arquivo local mais recente.';
+    }
+
+    function atualizar(comRefresh) {
+        fetch(url + (comRefresh ? '?refresh=1' : ''), { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+                if (!data) return;
+                var f = frase(data[chave]);
+                if (f) txt.innerHTML = f;
+            })
+            .catch(function () { /* silencioso */ });
+    }
+
+    // Dispara o refresh throttled e acompanha a conclusão do download em background.
+    atualizar(true);
+    var tentativas = 0;
+    var timer = setInterval(function () {
+        tentativas += 1;
+        atualizar(false);
+        if (tentativas >= 4) clearInterval(timer);
+    }, 5000);
+})();
+</script>

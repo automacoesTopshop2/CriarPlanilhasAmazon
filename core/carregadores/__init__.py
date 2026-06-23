@@ -8,5 +8,7 @@
 from .precos import CarregadorPrecos
 from .descricao import CarregadorDescricao
 from .descricao_api import CarregadorDescricaoAPI
+from .ncm import CarregadorNCM
 
-__all__ = ['CarregadorPrecos', 'CarregadorDescricao', 'CarregadorDescricaoAPI']
+__all__ = ['CarregadorPrecos', 'CarregadorDescricao', 'CarregadorDescricaoAPI',
+           'CarregadorNCM']

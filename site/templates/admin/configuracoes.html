@@ -217,12 +217,13 @@
 
     <!-- Tab: sharepoint ---------------------------------------------- -->
     <section class="tab-panel" data-panel="sharepoint">
-        <h2 class="card__section-title">SharePoint — Sincronização da Precificação</h2>
+        <h2 class="card__section-title">SharePoint — Sincronização das planilhas</h2>
         <p class="card__hint">
-            Cole o link de compartilhamento da planilha (botão <em>Compartilhar → Copiar link</em>
+            Cole o link de compartilhamento de cada planilha (botão <em>Compartilhar → Copiar link</em>
             no SharePoint/Excel Online). O sistema usa o endpoint <code>/shares</code> do
             Microsoft Graph e resolve site e caminho automaticamente.
             As credenciais (tenant_id, client_id, client_secret) ficam em <code>.env</code>.
+            As planilhas de preço também são re-baixadas em segundo plano ao abrir as telas de criação.
         </p>
 
         <div class="alert {% if snapshot.sharepoint.credenciais_configuradas %}alert--success{% else %}alert--danger{% endif %}">
@@ -236,21 +237,46 @@
         </div>
 
         <form id="form-sharepoint" class="form-grid">
-            <label class="field field--full">
-                <span class="field__label">Link da planilha de Precificação</span>
+            <div class="field field--full">
+                <span class="field__label">Link — Precificação (modelo normal)</span>
                 <input class="field__input" name="link_precificacao"
                        placeholder="https://...sharepoint.com/:x:/r/sites/.../Precificacao Amazon.xlsx?d=..."
-                       value="{{ snapshot.sharepoint.link_precificacao }}">
-            </label>
+                       value="{{ snapshot.sharepoint.links.precificacao }}">
+                <div class="form-grid__actions">
+                    <button type="button" class="btn btn--ghost btn--sm js-sp-testar" data-chave="precificacao">Testar</button>
+                    <button type="button" class="btn btn--ghost btn--sm js-sp-sincronizar" data-chave="precificacao">Sincronizar agora</button>
+                </div>
+            </div>
+
+            <div class="field field--full">
+                <span class="field__label">Link — Precificação Full (aba CLA, modalidade FULL)</span>
+                <input class="field__input" name="link_precificacao_full"
+                       placeholder="https://...sharepoint.com/:x:/r/sites/.../Precificacao Amazon - Full.xlsx?d=..."
+                       value="{{ snapshot.sharepoint.links.precificacao_full }}">
+                <div class="form-grid__actions">
+                    <button type="button" class="btn btn--ghost btn--sm js-sp-testar" data-chave="precificacao_full">Testar</button>
+                    <button type="button" class="btn btn--ghost btn--sm js-sp-sincronizar" data-chave="precificacao_full">Sincronizar agora</button>
+                </div>
+            </div>
+
+            <div class="field field--full">
+                <span class="field__label">Link — Drop-estoque (NCM da modalidade FULL)</span>
+                <input class="field__input" name="link_drop_estoque"
+                       placeholder="https://...sharepoint.com/:x:/r/sites/.../2026-xx-xx - Drop estoque.xlsx?d=..."
+                       value="{{ snapshot.sharepoint.links.drop_estoque }}">
+                <div class="form-grid__actions">
+                    <button type="button" class="btn btn--ghost btn--sm js-sp-testar" data-chave="drop_estoque">Testar</button>
+                    <button type="button" class="btn btn--ghost btn--sm js-sp-sincronizar" data-chave="drop_estoque">Sincronizar agora</button>
+                </div>
+            </div>
+
             <label class="checkbox">
                 <input type="checkbox" name="sync_no_startup"
                        {% if snapshot.sharepoint.sync_no_startup %}checked{% endif %}>
                 <span>Sincronizar automaticamente no startup do servidor</span>
             </label>
             <div class="form-grid__actions">
-                <button type="submit" class="btn btn--primary">Salvar</button>
-                <button type="button" class="btn btn--ghost" id="btn-sp-testar">Testar conexão</button>
-                <button type="button" class="btn btn--primary" id="btn-sp-sincronizar">Sincronizar agora</button>
+                <button type="submit" class="btn btn--primary">Salvar todos os links</button>
             </div>
         </form>
 

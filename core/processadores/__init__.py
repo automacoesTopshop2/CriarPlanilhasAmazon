@@ -14,11 +14,13 @@
 from .base import ProcessadorBase
 from .sku import ProcessadorSKU
 from .asin import ProcessadorASIN
+from .full import ProcessadorFULL
 from .limpeza import ProcessadorLimpeza
 
 __all__ = [
     'ProcessadorBase',
     'ProcessadorSKU',
     'ProcessadorASIN',
+    'ProcessadorFULL',
     'ProcessadorLimpeza'
 ]

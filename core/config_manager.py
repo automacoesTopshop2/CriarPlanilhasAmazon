@@ -40,6 +40,10 @@ class GerenciadorConfig:
 
     PADROES: Dict[str, Any] = {
         "arquivo_precificacao": "Precificacao.xlsx",
+        # Modalidade FULL (isolada): base de preço própria + NCM (Drop-estoque)
+        "arquivo_precificacao_full": "Precificacao Amazon - Full.xlsx",
+        "aba_precificacao_full": "CLA",
+        "arquivo_drop_estoque": "Drop estoque.xlsx",
         "arquivo_descricao": "DESCRIÇÃO.xlsx",
         "arquivo_remover": "termos_remover.txt",
         "arquivo_substituir": "termos_substituir.txt",
@@ -52,6 +56,8 @@ class GerenciadorConfig:
         "valores_fixos_excluidos": [],
         # SharePoint — link de compartilhamento direto (credenciais em env vars)
         "sharepoint_link_precificacao": "",
+        "sharepoint_link_precificacao_full": "",   # aba CLA da Precificação Full
+        "sharepoint_link_drop_estoque": "",        # NCM (sempre o xlsx "... - Drop estoque")
         "sharepoint_sync_no_startup": True,
         # Mapas editáveis via UI admin (vazio = usa default de config.py)
         "mapa_colunas_descricao": {},      # { "sku": ["SKU", ...], "titulo": [...], ... }

@@ -282,38 +282,56 @@
         box.textContent = msg;
     }
 
-    document.getElementById('form-sharepoint')?.addEventListener('submit', async (ev) => {
-        ev.preventDefault();
-        const fd = new FormData(ev.target);
+    // Lê os 3 links do form + a flag e salva no config. Retorna o resultado da API.
+    async function salvarLinksSharepoint() {
+        const form = document.getElementById('form-sharepoint');
+        const fd = new FormData(form);
         const body = {
             link_precificacao: fd.get('link_precificacao') || '',
+            link_precificacao_full: fd.get('link_precificacao_full') || '',
+            link_drop_estoque: fd.get('link_drop_estoque') || '',
             sync_no_startup: fd.get('sync_no_startup') === 'on',
         };
-        const r = await api('/api/config/sharepoint', { method: 'PUT', body });
-        if (r.ok) toast('Configuração SharePoint salva.', true);
+        return api('/api/config/sharepoint', { method: 'PUT', body });
+    }
+
+    document.getElementById('form-sharepoint')?.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const r = await salvarLinksSharepoint();
+        if (r.ok) toast('Links do SharePoint salvos.', true);
         else toast(r.data.mensagem || 'Falha ao salvar.', false);
     });
 
-    document.getElementById('btn-sp-testar')?.addEventListener('click', async () => {
-        spResultado('Testando...', true);
-        const r = await api('/api/config/sharepoint/testar', { method: 'POST' });
-        if (r.ok && r.data.ok) {
-            const sizeKb = r.data.size ? Math.round(r.data.size / 1024) : '?';
-            spResultado(`✓ Acesso OK — "${r.data.name}" (${sizeKb} KB)`, true);
-        } else {
-            spResultado('✗ ' + (r.data.mensagem || 'Falha desconhecida.'), false);
-        }
+    // Testar / Sincronizar por planilha (data-chave). Salva os links antes,
+    // garantindo que a ação use exatamente o que está no form.
+    document.querySelectorAll('.js-sp-testar').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            const chave = btn.getAttribute('data-chave');
+            spResultado('Testando...', true);
+            await salvarLinksSharepoint();
+            const r = await api('/api/config/sharepoint/testar', { method: 'POST', body: { chave } });
+            if (r.ok && r.data.ok) {
+                const sizeKb = r.data.size ? Math.round(r.data.size / 1024) : '?';
+                spResultado(`✓ Acesso OK — "${r.data.name}" (${sizeKb} KB)`, true);
+            } else {
+                spResultado('✗ ' + (r.data.mensagem || 'Falha desconhecida.'), false);
+            }
+        });
     });
 
-    document.getElementById('btn-sp-sincronizar')?.addEventListener('click', async () => {
-        spResultado('Sincronizando...', true);
-        const r = await api('/api/config/sharepoint/sincronizar', { method: 'POST' });
-        if (r.ok && r.data.sucesso) {
-            spResultado('✓ ' + r.data.mensagem, true);
-            toast('Precificação sincronizada do SharePoint.', true);
-        } else {
-            spResultado('✗ ' + (r.data.mensagem || 'Falha desconhecida.'), false);
-            toast('Falha ao sincronizar.', false);
-        }
+    document.querySelectorAll('.js-sp-sincronizar').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            const chave = btn.getAttribute('data-chave');
+            spResultado('Sincronizando...', true);
+            await salvarLinksSharepoint();
+            const r = await api('/api/config/sharepoint/sincronizar', { method: 'POST', body: { chave } });
+            if (r.ok && r.data.sucesso) {
+                spResultado('✓ ' + r.data.mensagem, true);
+                toast('Planilha sincronizada do SharePoint.', true);
+            } else {
+                spResultado('✗ ' + (r.data.mensagem || 'Falha desconhecida.'), false);
+                toast('Falha ao sincronizar.', false);
+            }
+        });
     });
 })();

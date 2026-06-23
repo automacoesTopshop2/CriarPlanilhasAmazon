@@ -172,6 +172,16 @@ class TestRotasSharePoint:
         assert data["estado"]["sharepoint"]["link_precificacao"] == LINK_FAKE
         assert data["estado"]["sharepoint"]["sync_no_startup"] is True
 
+    def test_put_config_aceita_links_full_e_drop(self, client, login_admin):
+        r = client.put("/api/config/sharepoint", json={
+            "link_precificacao_full": LINK_FAKE + "full",
+            "link_drop_estoque": LINK_FAKE + "drop",
+        })
+        assert r.status_code == 200
+        links = r.get_json()["estado"]["sharepoint"]["links"]
+        assert links["precificacao_full"] == LINK_FAKE + "full"
+        assert links["drop_estoque"] == LINK_FAKE + "drop"
+
     def test_put_config_usuario_403(self, client, login_usuario):
         r = client.put("/api/config/sharepoint", json={"link_precificacao": LINK_FAKE})
         assert r.status_code == 403
@@ -226,6 +236,32 @@ class TestRotasSharePoint:
             assert f.read() == b"BYTES_FROM_SP"
 
     @patch("core.sharepoint_client.requests.get")
+    def test_sincronizar_chave_full_grava_arquivo_full(
+        self, mock_get, client, login_admin, app, tmp_path, monkeypatch
+    ):
+        """`chave=precificacao_full` baixa o link Full no arquivo da Precificação Full."""
+        monkeypatch.setenv("SHAREPOINT_TENANT_ID", TENANT_FAKE)
+        monkeypatch.setenv("SHAREPOINT_CLIENT_ID", CLIENT_FAKE)
+        monkeypatch.setenv("SHAREPOINT_CLIENT_SECRET", SECRET_FAKE)
+
+        destino_full = str(tmp_path / "preci_full.xlsx")
+        with app.app_context():
+            app.config["APP_CONFIG"].arquivo_precificacao_full = destino_full
+
+        client.put("/api/config/sharepoint",
+                   json={"link_precificacao_full": LINK_FAKE + "full"})
+
+        mock_get.return_value = MagicMock(
+            status_code=200, ok=True, content=b"FULL_BYTES"
+        )
+        r = client.post("/api/config/sharepoint/sincronizar",
+                        json={"chave": "precificacao_full"})
+        assert r.status_code == 200, r.get_json()
+        assert os.path.exists(destino_full)
+        with open(destino_full, "rb") as f:
+            assert f.read() == b"FULL_BYTES"
+
+    @patch("core.sharepoint_client.requests.get")
     def test_sincronizar_aceita_usuario_comum(
         self, mock_get, client, login_admin, login_usuario, app, tmp_path, monkeypatch
     ):
@@ -270,3 +306,68 @@ class TestRotasSharePoint:
         monkeypatch.setenv("SHAREPOINT_CLIENT_SECRET", SECRET_FAKE)
         r = client.get("/api/config")
         assert r.get_json()["sharepoint"]["credenciais_configuradas"] is True
+
+
+# =============================================================================
+# Folder-scan da Drop-estoque (pega o *Drop estoque*.xlsx mais recente da pasta)
+# =============================================================================
+class TestFolderScan:
+    @patch("core.sharepoint_client.requests.get")
+    def test_pega_mais_recente_da_pasta(self, mock_get, tmp_path):
+        from core.sharepoint_client import sincronizar_inteligente
+
+        def fake_get(url, **kw):
+            if "/children" in url:
+                return MagicMock(status_code=200, ok=True, json=lambda: {"value": [
+                    {"id": "1", "name": "2026-06-22 - Drop estoque.xlsx",
+                     "lastModifiedDateTime": "2026-06-22T10:00:00Z"},
+                    {"id": "2", "name": "2026-06-23 - Drop estoque.xlsx",
+                     "lastModifiedDateTime": "2026-06-23T10:00:00Z"},
+                    {"id": "3", "name": "Outra planilha.xlsx",
+                     "lastModifiedDateTime": "2026-06-24T10:00:00Z"},
+                    {"id": "4", "name": "2026-06-24 - Drop estoque.pdf",
+                     "lastModifiedDateTime": "2026-06-24T11:00:00Z"},
+                ]})
+            if "/content" in url:
+                return MagicMock(status_code=200, ok=True, content=b"DROP_BYTES")
+            # driveItem do arquivo apontado -> parentReference
+            return MagicMock(status_code=200, ok=True,
+                             json=lambda: {"parentReference": {"driveId": "D", "id": "P"}})
+
+        mock_get.side_effect = fake_get
+        c = SharePointClient(TENANT_FAKE, CLIENT_FAKE, SECRET_FAKE)
+        destino = str(tmp_path / "drop.xlsx")
+        ok, msg, lm = sincronizar_inteligente(
+            c, LINK_FAKE, destino, pasta_contem="drop estoque"
+        )
+        assert ok, msg
+        # Escolhe o .xlsx "drop estoque" mais recente (id 2) — ignora o .pdf e o não-correspondente.
+        assert lm == "2026-06-23T10:00:00Z"
+        with open(destino, "rb") as f:
+            assert f.read() == b"DROP_BYTES"
+
+    @patch("core.sharepoint_client.requests.get")
+    def test_fallback_para_link_direto_quando_pasta_falha(self, mock_get, tmp_path):
+        from core.sharepoint_client import sincronizar_inteligente
+
+        def fake_get(url, **kw):
+            # Lista da pasta falha (403) -> deve cair no fallback de link direto.
+            if "/children" in url:
+                return MagicMock(status_code=403, ok=False, json=lambda: {})
+            if "/content" in url:
+                return MagicMock(status_code=200, ok=True, content=b"DIRETO_BYTES")
+            # driveItem (resolve parent p/ tentar a pasta, e tb usado no link direto)
+            return MagicMock(status_code=200, ok=True,
+                             json=lambda: {"parentReference": {"driveId": "D", "id": "P"},
+                                           "name": "x.xlsx", "lastModifiedDateTime": "2026-06-23T09:00:00Z"})
+
+        mock_get.side_effect = fake_get
+        c = SharePointClient(TENANT_FAKE, CLIENT_FAKE, SECRET_FAKE)
+        destino = str(tmp_path / "drop.xlsx")
+        ok, msg, lm = sincronizar_inteligente(
+            c, LINK_FAKE, destino, pasta_contem="drop estoque"
+        )
+        assert ok, msg
+        assert "fallback" in msg.lower()
+        with open(destino, "rb") as f:
+            assert f.read() == b"DIRETO_BYTES"

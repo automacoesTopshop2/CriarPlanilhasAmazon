@@ -68,12 +68,31 @@ def _reaplica_config():
         cfg.aplicar_gerenciador(_gerenciador())
 
 
+# Planilhas sincronizáveis via SharePoint:
+#   chave_lógica -> (chave_do_link_no_config, chave_do_arquivo_no_config, rótulo)
+_SHAREPOINT_ARQUIVOS = {
+    "precificacao":      ("sharepoint_link_precificacao",      "arquivo_precificacao",      "Precificação"),
+    "precificacao_full": ("sharepoint_link_precificacao_full", "arquivo_precificacao_full", "Precificação Full"),
+    "drop_estoque":      ("sharepoint_link_drop_estoque",      "arquivo_drop_estoque",      "Drop-estoque (NCM)"),
+}
+
+
 def _sharepoint_status() -> dict:
-    """Estado da config SharePoint (link + flag), sem expor secrets."""
+    """Estado da config SharePoint (links + flag), sem expor secrets."""
     import os as _os
     g = _gerenciador()
+    links = {
+        chave: (g.get(cfg_link) or "")
+        for chave, (cfg_link, _attr, _label) in _SHAREPOINT_ARQUIVOS.items()
+    }
     return {
-        "link_precificacao": g.get("sharepoint_link_precificacao") or "",
+        # `link_precificacao` mantido para compatibilidade com a UI antiga.
+        "link_precificacao": links["precificacao"],
+        "links": links,
+        "arquivos": {
+            chave: {"label": label, "arquivo": g.get(attr) or ""}
+            for chave, (_l, attr, label) in _SHAREPOINT_ARQUIVOS.items()
+        },
         "sync_no_startup": bool(g.get("sharepoint_sync_no_startup", True)),
         "credenciais_configuradas": all([
             (_os.getenv("SHAREPOINT_TENANT_ID") or "").strip(),
@@ -379,16 +398,28 @@ def _sharepoint_client_ou_erro():
     return cliente, None
 
 
+def _chave_sharepoint(data_ou_args) -> str:
+    """Resolve a chave da planilha (default 'precificacao' p/ compat)."""
+    chave = str((data_ou_args.get("chave") or "precificacao")).strip()
+    return chave if chave in _SHAREPOINT_ARQUIVOS else "precificacao"
+
+
 @config_bp.route("/api/config/sharepoint", methods=["PUT"])
 @login_required
 @requer_admin
 def api_sharepoint_config():
-    """Salva o link de compartilhamento e a flag de sync no startup."""
+    """Salva os links de compartilhamento e a flag de sync no startup.
+
+    Aceita `link_precificacao`, `link_precificacao_full`, `link_drop_estoque`
+    (qualquer subconjunto) e `sync_no_startup`."""
     _csrf()
     data = request.get_json(silent=True) or {}
     g = _gerenciador()
-    if "link_precificacao" in data:
-        g.set("sharepoint_link_precificacao", str(data["link_precificacao"]).strip())
+    # link_<chave> -> sharepoint_link_<chave>
+    for chave, (cfg_link, _attr, _label) in _SHAREPOINT_ARQUIVOS.items():
+        campo = f"link_{chave}"
+        if campo in data:
+            g.set(cfg_link, str(data[campo]).strip())
     if "sync_no_startup" in data:
         g.set("sharepoint_sync_no_startup", bool(data["sync_no_startup"]))
     return jsonify({"sucesso": True, "estado": _snapshot()})
@@ -398,12 +429,15 @@ def api_sharepoint_config():
 @login_required
 @requer_admin
 def api_sharepoint_testar():
-    """Valida o link sem baixar (faz GET no DriveItem para checar acesso)."""
+    """Valida um link sem baixar (GET no DriveItem). `chave` escolhe a planilha."""
     _csrf()
     g = _gerenciador()
-    link = (g.get("sharepoint_link_precificacao") or "").strip()
+    chave = _chave_sharepoint(request.get_json(silent=True) or {})
+    cfg_link, _attr, label = _SHAREPOINT_ARQUIVOS[chave]
+    link = (g.get(cfg_link) or "").strip()
     if not link:
-        return jsonify({"sucesso": False, "mensagem": "Cole o link da planilha primeiro."}), 400
+        return jsonify({"sucesso": False,
+                        "mensagem": f"Cole o link da planilha ({label}) primeiro."}), 400
 
     cliente, erro = _sharepoint_client_ou_erro()
     if erro:
@@ -411,7 +445,7 @@ def api_sharepoint_testar():
 
     try:
         info = cliente.testar_url(link)
-        return jsonify({"sucesso": True, **info})
+        return jsonify({"sucesso": True, "chave": chave, **info})
     except Exception as e:
         return jsonify({"sucesso": False, "mensagem": str(e)}), 400
 
@@ -419,39 +453,45 @@ def api_sharepoint_testar():
 @config_bp.route("/api/config/sharepoint/sincronizar", methods=["POST"])
 @login_required
 def api_sharepoint_sincronizar():
-    """Baixa a Precificação via share-link e grava no path local.
+    """Baixa uma planilha via share-link e grava no path local. `chave` escolhe
+    qual (precificacao | precificacao_full | drop_estoque; default precificacao).
 
-    Aberto a qualquer usuário autenticado: o link é configurado pelo
-    admin, então o sync apenas atualiza o arquivo local — não há
-    superfície de ataque (usuário não escolhe a URL)."""
+    Aberto a qualquer usuário autenticado: o link é configurado pelo admin,
+    então o sync apenas atualiza o arquivo local — não há superfície de ataque
+    (usuário não escolhe a URL)."""
     _csrf()
     g = _gerenciador()
     cfg = _config_app()
-    link = (g.get("sharepoint_link_precificacao") or "").strip()
+    chave = _chave_sharepoint(request.get_json(silent=True) or {})
+    cfg_link, attr, label = _SHAREPOINT_ARQUIVOS[chave]
+    link = (g.get(cfg_link) or "").strip()
     if not link:
         return jsonify({
             "sucesso": False,
-            "mensagem": "Cole o link da planilha primeiro.",
+            "mensagem": f"Cole o link da planilha ({label}) primeiro.",
         }), 400
 
     cliente, erro = _sharepoint_client_ou_erro()
     if erro:
         return jsonify({"sucesso": False, "mensagem": erro}), 400
 
-    from core.sharepoint_client import sincronizar_por_url
-    destino = cfg.arquivo_precificacao if cfg else g.get("arquivo_precificacao")
-    ok, msg = sincronizar_por_url(cliente, link, destino)
+    from core.sharepoint_client import sincronizar_inteligente
+    from core import precificacao_status
+    destino = getattr(cfg, attr) if cfg else g.get(attr)
+    # Drop-estoque: busca o arquivo mais recente da pasta (nome muda de data).
+    pasta_contem = "drop estoque" if chave == "drop_estoque" else None
+    ok, msg, src_lm = sincronizar_inteligente(cliente, link, destino,
+                                              pasta_contem=pasta_contem)
+    # Registra o frescor (mesma fonte do alerta nas páginas de criação).
+    precificacao_status.registrar(
+        chave, ok=ok, source_last_modified=src_lm,
+        synced_at=precificacao_status.agora_utc_iso(), msg=msg,
+    )
     if ok:
-        registrar_evento(
-            "sharepoint_sync_ok",
-            usuario_id=current_user.id,
-            detalhes=msg[:255],
-        )
-        return jsonify({"sucesso": True, "mensagem": msg})
+        registrar_evento("sharepoint_sync_ok", usuario_id=current_user.id,
+                         detalhes=f"[{label}] {msg}"[:255])
+        return jsonify({"sucesso": True, "chave": chave, "mensagem": msg})
     else:
-        registrar_evento(
-            "sharepoint_sync_falhou",
-            usuario_id=current_user.id,
-            detalhes=msg[:255],
-        )
+        registrar_evento("sharepoint_sync_falhou", usuario_id=current_user.id,
+                         detalhes=f"[{label}] {msg}"[:255])
         return jsonify({"sucesso": False, "mensagem": msg}), 400

@@ -27,8 +27,14 @@ import time
 import uuid
 import queue
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
+
+try:
+    from zoneinfo import ZoneInfo
+    _BR_TZ = ZoneInfo("America/Sao_Paulo")
+except Exception:  # zoneinfo/tzdata ausente — cai para UTC-3 fixo
+    _BR_TZ = timezone(timedelta(hours=-3))
 
 from flask import (
     Flask, render_template, request, jsonify,
@@ -44,9 +50,10 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from core.config import Configuracoes
 from core.config_manager import GerenciadorConfig
-from core.processadores import ProcessadorSKU, ProcessadorASIN, ProcessadorLimpeza
+from core.processadores import ProcessadorSKU, ProcessadorASIN, ProcessadorFULL, ProcessadorLimpeza
 from core.carregadores import CarregadorPrecos, CarregadorDescricao, CarregadorDescricaoAPI
 from core import amazon_categorias
+from core import precificacao_status
 from core.utils import Utilitarios
 from core import bdamazon_client
 from core import amazon_sp_client, amazon_listings
@@ -220,39 +227,161 @@ def _limpar_jobs_antigos(horas: int = 2) -> None:
 # ==============================================================================
 # Helpers de inicialização
 # ==============================================================================
-def _sincronizar_sharepoint_startup(app: Flask, gerenciador, cfg) -> None:
-    """
-    Tenta baixar a Precificação do SharePoint no startup via share-link.
-    Erros são logados mas não interrompem o servidor — sistema segue com
-    arquivo local antigo (se existir).
-    """
-    link = (gerenciador.get("sharepoint_link_precificacao") or "").strip()
-    if not link:
-        return  # não configurado — silencioso
+# Throttle padrão do re-download sob demanda (segundos). As planilhas mudam
+# com frequência, mas baixar 6 MB a cada page-load é desperdício — só re-baixa
+# se a última sincronização passou desse intervalo.
+_THROTTLE_PRECIFICACAO_SEG = int(os.getenv("PRECIFICACAO_THROTTLE_SEG", "600"))
 
+# Evita disparar várias threads de atualização concorrentes (page-loads seguidos).
+_SYNC_LOCK = threading.Lock()
+_SYNC_EM_ANDAMENTO = False
+
+
+def _candidatos_sharepoint(gerenciador, cfg):
+    """(chave_lógica, share_link, destino_local, rótulo) para cada planilha."""
+    return [
+        ("precificacao", (gerenciador.get("sharepoint_link_precificacao") or "").strip(),
+         cfg.arquivo_precificacao, "Precificação"),
+        ("precificacao_full", (gerenciador.get("sharepoint_link_precificacao_full") or "").strip(),
+         cfg.arquivo_precificacao_full, "Precificação Full"),
+        ("drop_estoque", (gerenciador.get("sharepoint_link_drop_estoque") or "").strip(),
+         cfg.arquivo_drop_estoque, "Drop-estoque (NCM)"),
+    ]
+
+
+def _obter_cliente_sharepoint(app: Flask):
+    """Retorna um SharePointClient pronto, ou None (com log do motivo)."""
     try:
-        from core.sharepoint_client import SharePointClient, sincronizar_por_url
+        from core.sharepoint_client import SharePointClient
     except ImportError as e:
         app.logger.warning("SharePoint indisponível (msal não instalado?): %s", e)
-        return
-
+        return None
     cliente = SharePointClient.do_ambiente()
     if cliente is None:
         app.logger.info(
-            "SharePoint link configurado mas credenciais ausentes em env "
+            "SharePoint link(s) configurado(s) mas credenciais ausentes em env "
             "(SHAREPOINT_TENANT_ID/CLIENT_ID/CLIENT_SECRET) — pulando sync."
         )
+    return cliente
+
+
+def _sincronizar_links(app: Flask, gerenciador, cfg, *,
+                       throttle_segundos: Optional[int] = None) -> None:
+    """Baixa as planilhas configuradas, registrando o estado (origem + sync).
+
+    throttle_segundos=None  -> sempre baixa (usado no startup).
+    throttle_segundos=N     -> só baixa o que sincronizou há mais de N segundos.
+    """
+    from core.sharepoint_client import sincronizar_inteligente
+
+    candidatos = [c for c in _candidatos_sharepoint(gerenciador, cfg) if c[1]]
+    if not candidatos:
         return
 
-    destino = cfg.arquivo_precificacao
-    ok, msg = sincronizar_por_url(cliente, link, destino)
-    if ok:
-        app.logger.info("SharePoint sync OK: %s", msg)
-    else:
-        app.logger.error(
-            "SharePoint sync falhou no startup (continuando com arquivo local): %s",
-            msg,
+    # Filtra pelo throttle ANTES de instanciar o cliente (evita rede à toa).
+    if throttle_segundos is not None:
+        candidatos = [
+            c for c in candidatos
+            if precificacao_status.precisa_atualizar(c[0], throttle_segundos)
+        ]
+        if not candidatos:
+            return
+
+    cliente = _obter_cliente_sharepoint(app)
+    if cliente is None:
+        return
+
+    for chave, link, destino, rotulo in candidatos:
+        # A Drop-estoque muda de nome (data) todo dia → busca o mais recente
+        # da pasta; as demais baixam o arquivo exato do share-link.
+        pasta_contem = "drop estoque" if chave == "drop_estoque" else None
+        ok, msg, src_lm = sincronizar_inteligente(
+            cliente, link, destino, pasta_contem=pasta_contem
         )
+        precificacao_status.registrar(
+            chave, ok=ok, source_last_modified=src_lm,
+            synced_at=precificacao_status.agora_utc_iso(), msg=msg,
+        )
+        if ok:
+            app.logger.info("SharePoint sync OK [%s]: %s", rotulo, msg)
+        else:
+            app.logger.error(
+                "SharePoint sync falhou [%s] (continuando com arquivo local): %s",
+                rotulo, msg,
+            )
+
+
+def _sincronizar_sharepoint_startup(app: Flask, gerenciador, cfg) -> None:
+    """Sync no startup: baixa tudo que estiver configurado (sem throttle)."""
+    _sincronizar_links(app, gerenciador, cfg, throttle_segundos=None)
+
+
+def _atualizar_precificacao_async(app: Flask) -> None:
+    """Dispara, em background, um re-download throttled das planilhas.
+
+    Chamado ao abrir as páginas de criação para manter a base "sempre a mais
+    atualizada" sem travar o render. Reentrância protegida: se já houver uma
+    atualização em andamento, não dispara outra.
+    """
+    global _SYNC_EM_ANDAMENTO
+    gerenciador = app.config.get("CONFIG_MANAGER")
+    cfg = app.config.get("APP_CONFIG")
+    if not gerenciador or not cfg:
+        return
+    if not any(c[1] for c in _candidatos_sharepoint(gerenciador, cfg)):
+        return  # nada configurado
+
+    with _SYNC_LOCK:
+        if _SYNC_EM_ANDAMENTO:
+            return
+        _SYNC_EM_ANDAMENTO = True
+
+    def _run():
+        global _SYNC_EM_ANDAMENTO
+        try:
+            _sincronizar_links(app, gerenciador, cfg,
+                               throttle_segundos=_THROTTLE_PRECIFICACAO_SEG)
+        except Exception as e:
+            app.logger.warning("Atualização de precificação em background falhou: %s", e)
+        finally:
+            with _SYNC_LOCK:
+                _SYNC_EM_ANDAMENTO = False
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def _fmt_br(iso: Optional[str]) -> Optional[str]:
+    """Converte ISO (UTC) -> 'dd/mm/aaaa HH:MM' no fuso de São Paulo."""
+    if not iso:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(_BR_TZ).strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        return None
+
+
+def _status_precificacao_br(gerenciador, cfg) -> dict:
+    """Resumo do frescor das planilhas, com datas em horário de Brasília.
+
+    Retorna { chave: {label, arquivo, configurado, editado_em, baixado_em,
+    ok, msg} } para 'precificacao', 'precificacao_full' e 'drop_estoque'.
+    """
+    out = {}
+    for chave, link, destino, rotulo in _candidatos_sharepoint(gerenciador, cfg):
+        reg = precificacao_status.obter(chave) or {}
+        out[chave] = {
+            "label": rotulo,
+            "arquivo": os.path.basename(destino),
+            "configurado": bool(link),
+            "editado_em": _fmt_br(reg.get("source_last_modified")),
+            "baixado_em": _fmt_br(reg.get("synced_at")),
+            "ok": reg.get("ok"),
+            "msg": reg.get("msg") or "",
+        }
+    return out
 
 
 # ==============================================================================
@@ -410,6 +539,12 @@ def create_app(config_overrides: Optional[Dict[str, Any]] = None) -> Flask:
     app.config["CONFIG_MANAGER"] = gerenciador
     app.config["APP_CONFIG"] = cfg
 
+    # ---- Estado de frescor das planilhas (ao lado do app_config.json) ----
+    precificacao_status.configurar(
+        os.path.join(os.path.dirname(os.path.abspath(gerenciador.caminho_arquivo)),
+                     "_sync_precificacao.json")
+    )
+
     # ---- Sincronização SharePoint no startup (não-bloqueante em caso de erro) ----
     # Se as credenciais e os caminhos estiverem configurados, baixa a Precificação
     # antes de aceitar requests. Falha → log + segue com arquivo local antigo.
@@ -528,15 +663,45 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
     def home():
         return render_template("index.html", bases=_status_bases(), active="dashboard")
 
+    def _ctx_precificacao():
+        """Dispara o refresh throttled em background e devolve o status atual
+        (datas em horário de Brasília) para o alerta nas páginas de criação."""
+        gerenciador = app.config.get("CONFIG_MANAGER")
+        cfg_atual = app.config.get("APP_CONFIG", config)
+        _atualizar_precificacao_async(app)
+        return _status_precificacao_br(gerenciador, cfg_atual)
+
     @app.route("/sku")
     @login_required
     def page_sku():
-        return render_template("sku.html", bases=_status_bases(), active="sku")
+        return render_template("sku.html", bases=_status_bases(), active="sku",
+                               status_precificacao=_ctx_precificacao(),
+                               precif_chave="precificacao")
 
     @app.route("/asin")
     @login_required
     def page_asin():
-        return render_template("asin.html", bases=_status_bases(), active="asin")
+        return render_template("asin.html", bases=_status_bases(), active="asin",
+                               status_precificacao=_ctx_precificacao(),
+                               precif_chave="precificacao")
+
+    @app.route("/full")
+    @login_required
+    def page_full():
+        return render_template("full.html", bases=_status_bases(), active="full",
+                               status_precificacao=_ctx_precificacao(),
+                               precif_chave="precificacao_full")
+
+    @app.route("/api/precificacao/status")
+    @login_required
+    def api_precificacao_status():
+        """Status de frescor das planilhas (datas em BR). `?refresh=1` dispara
+        um re-download throttled em background antes de responder."""
+        gerenciador = app.config.get("CONFIG_MANAGER")
+        cfg_atual = app.config.get("APP_CONFIG", config)
+        if _flag_ligada(request.args.get("refresh")):
+            _atualizar_precificacao_async(app)
+        return jsonify(_status_precificacao_br(gerenciador, cfg_atual))
 
     @app.route("/amazon")
     @login_required
@@ -1302,9 +1467,13 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
         finally:
             job.log_queue.put({"tipo": "end"})
 
-    def _processar_manual_compartilhado(processador, modo_asin: bool):
-        """Lógica comum a /api/processar/sku-manual e /asin-manual.
-        Devolve (status, json_response)."""
+    def _processar_manual_compartilhado(processador, modo_asin: bool,
+                                        tipo_job: Optional[str] = None):
+        """Lógica comum a /api/processar/sku-manual, /asin-manual e /full-manual.
+        Devolve (status, json_response).
+
+        tipo_job: rótulo do Job (default: 'asin-manual' se modo_asin senão
+        'sku-manual'). O FULL passa 'full' para categorizar os resultados."""
         if not current_user.codigo_externo:
             return 400, {
                 "sucesso": False,
@@ -1346,7 +1515,7 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
             return 400, {"sucesso": False,
                          "mensagem": "arquivo_template é obrigatório (ou use o template pronto)."}
 
-        job = Job("asin-manual" if modo_asin else "sku-manual",
+        job = Job(tipo_job or ("asin-manual" if modo_asin else "sku-manual"),
                   owner_id=current_user.id)
         with JOBS_LOCK:
             JOBS[job.id] = job
@@ -1366,6 +1535,19 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
         cfg_atual = app.config.get("APP_CONFIG", config)
         status, body = _processar_manual_compartilhado(
             ProcessadorASIN(cfg_atual), modo_asin=True
+        )
+        return jsonify(body), status
+
+    @app.route("/api/processar/full-manual", methods=["POST"])
+    @login_required
+    def api_processar_full_manual():
+        """Modalidade FULL (CONTA-CLA + Logística da Amazon). Mesma entrada do
+        ASIN manual (sku_raiz + conta_codigo CLA + asin → resolve sku_market no
+        BDAmazon), mas gera com preço da Precificação Full (aba CLA), NCM da
+        Drop-estoque e colunas fixas próprias do FULL."""
+        cfg_atual = app.config.get("APP_CONFIG", config)
+        status, body = _processar_manual_compartilhado(
+            ProcessadorFULL(cfg_atual), modo_asin=True, tipo_job="full"
         )
         return jsonify(body), status
 

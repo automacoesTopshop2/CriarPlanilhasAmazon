@@ -169,6 +169,60 @@ class SharePointClient:
             raise self._erro_http(r, "Download do arquivo")
         return r.content
 
+    def baixar_mais_recente_da_pasta(
+        self, share_url: str, *, contem: str = "", ext: str = ".xlsx",
+    ) -> Tuple[bytes, str, Optional[str]]:
+        """A partir do share-link de um ARQUIVO, localiza na MESMA pasta o
+        arquivo mais recente cujo nome contém `contem` e termina em `ext`, e
+        baixa o conteúdo. Útil para a Drop-estoque, cujo nome muda de data todo
+        dia ("2026-06-23 - Drop estoque.xlsx") mas vive sempre na mesma pasta.
+
+        Retorna (conteudo, nome, last_modified_iso). Levanta SharePointError.
+        Requer permissão de leitura no drive/pasta (Sites.Selected/Read.All).
+        """
+        # 1) Resolve o driveItem do arquivo apontado p/ achar a pasta-pai.
+        r = requests.get(self._driveitem_url(share_url), headers=self._headers(), timeout=30)
+        if not r.ok:
+            raise self._erro_http(r, "Resolução do item")
+        item = r.json()
+        parent = item.get("parentReference") or {}
+        drive_id = parent.get("driveId")
+        parent_id = parent.get("id")
+        if not drive_id or not parent_id:
+            raise SharePointError("Não foi possível resolver a pasta-pai do arquivo.")
+
+        # 2) Lista os filhos da pasta (com paginação).
+        filhos = []
+        next_url = f"{_GRAPH_BASE}/drives/{drive_id}/items/{parent_id}/children?$top=200"
+        while next_url:
+            rc = requests.get(next_url, headers=self._headers(), timeout=60)
+            if not rc.ok:
+                raise self._erro_http(rc, "Listagem da pasta")
+            data = rc.json()
+            filhos.extend(data.get("value", []))
+            next_url = data.get("@odata.nextLink")
+
+        # 3) Filtra por nome (contém + extensão) e escolhe o mais recente.
+        contem_l, ext_l = contem.lower(), ext.lower()
+        candidatos = [
+            c for c in filhos
+            if not c.get("folder")
+            and str(c.get("name", "")).lower().endswith(ext_l)
+            and contem_l in str(c.get("name", "")).lower()
+        ]
+        if not candidatos:
+            raise SharePointError(
+                f"Nenhum arquivo '*{contem}*{ext}' encontrado na pasta."
+            )
+        melhor = max(candidatos, key=lambda c: c.get("lastModifiedDateTime") or "")
+
+        # 4) Baixa o conteúdo do escolhido.
+        cont_url = f"{_GRAPH_BASE}/drives/{drive_id}/items/{melhor['id']}/content"
+        rd = requests.get(cont_url, headers=self._headers(), timeout=180, allow_redirects=True)
+        if not rd.ok:
+            raise self._erro_http(rd, "Download do arquivo")
+        return rd.content, melhor.get("name", ""), melhor.get("lastModifiedDateTime")
+
 
 # =============================================================================
 # Helper de alto nível: baixa via share-link e grava no disco
@@ -194,3 +248,77 @@ def sincronizar_por_url(
         return False, f"Erro de rede: {e}"
     except Exception as e:
         return False, f"Erro inesperado: {e}"
+
+
+def sincronizar_por_url_meta(
+    cliente: SharePointClient,
+    share_url: str,
+    destino_local: str,
+) -> Tuple[bool, str, Optional[str]]:
+    """
+    Igual a `sincronizar_por_url`, mas também devolve o `lastModifiedDateTime`
+    (ISO, UTC) do arquivo na ORIGEM (SharePoint) — usado para o alerta de
+    "última atualização nas planilhas". Retorna (sucesso, mensagem, last_modified).
+
+    last_modified pode vir None se a chamada de metadados falhar mas o download
+    funcionar (ou vice-versa).
+    """
+    last_modified: Optional[str] = None
+    try:
+        # Metadados primeiro (lastModifiedDateTime). Não-fatal se falhar.
+        try:
+            meta = cliente.testar_url(share_url)
+            last_modified = meta.get("last_modified")
+        except Exception:
+            last_modified = None
+
+        conteudo = cliente.baixar_por_url(share_url)
+        os.makedirs(os.path.dirname(os.path.abspath(destino_local)) or ".", exist_ok=True)
+        with open(destino_local, "wb") as f:
+            f.write(conteudo)
+        return True, f"Sincronizado: {len(conteudo) // 1024} KB em {destino_local}", last_modified
+    except SharePointError as e:
+        return False, str(e), last_modified
+    except requests.exceptions.RequestException as e:
+        return False, f"Erro de rede: {e}", last_modified
+    except Exception as e:
+        return False, f"Erro inesperado: {e}", last_modified
+
+
+def _gravar(destino_local: str, conteudo: bytes) -> None:
+    os.makedirs(os.path.dirname(os.path.abspath(destino_local)) or ".", exist_ok=True)
+    with open(destino_local, "wb") as f:
+        f.write(conteudo)
+
+
+def sincronizar_inteligente(
+    cliente: SharePointClient,
+    share_url: str,
+    destino_local: str,
+    *,
+    pasta_contem: Optional[str] = None,
+    ext: str = ".xlsx",
+) -> Tuple[bool, str, Optional[str]]:
+    """Sincroniza uma planilha do SharePoint, retornando (ok, msg, last_modified).
+
+    - `pasta_contem=None`  -> baixa exatamente o arquivo do share-link.
+    - `pasta_contem="..."` -> baixa o arquivo MAIS RECENTE da pasta cujo nome
+      contém esse texto (ex.: "drop estoque"); se a varredura de pasta falhar
+      (permissão/Graph), faz **fallback** para o link direto. Assim a Drop-estoque
+      funciona mesmo quando o nome do arquivo muda de data.
+    """
+    if not pasta_contem:
+        return sincronizar_por_url_meta(cliente, share_url, destino_local)
+
+    try:
+        conteudo, nome, lm = cliente.baixar_mais_recente_da_pasta(
+            share_url, contem=pasta_contem, ext=ext
+        )
+        _gravar(destino_local, conteudo)
+        return True, f"Sincronizado '{nome}': {len(conteudo) // 1024} KB em {destino_local}", lm
+    except Exception as e:
+        # Fallback: tenta o link direto (arquivo apontado no share-link).
+        ok, msg, lm = sincronizar_por_url_meta(cliente, share_url, destino_local)
+        if ok:
+            return True, f"(fallback link direto; varredura de pasta falhou: {e}) {msg}", lm
+        return False, f"Varredura de pasta falhou ({e}); link direto também: {msg}", lm

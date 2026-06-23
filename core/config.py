@@ -50,10 +50,24 @@ class Configuracoes:
     arquivo_remover: str = field(default_factory=lambda: os.getenv("ARQUIVO_REMOVER", "termos_remover.txt"))
     arquivo_substituir: str = field(default_factory=lambda: os.getenv("ARQUIVO_SUBSTITUIR", "termos_substituir.txt"))
 
+    # --- Modalidade FULL (isolada do modelo normal) ---
+    # Base de preço própria (aba CLA) e planilha de NCM (Drop-estoque).
+    arquivo_precificacao_full: str = field(default_factory=lambda: os.getenv("ARQUIVO_PRECIFICACAO_FULL", "Precificacao Amazon - Full.xlsx"))
+    aba_precificacao_full: str = field(default_factory=lambda: os.getenv("ABA_PRECIFICACAO_FULL", "CLA"))
+    arquivo_drop_estoque: str = field(default_factory=lambda: os.getenv("ARQUIVO_DROP_ESTOQUE", "Drop estoque.xlsx"))
+
     @property
     def usar_api_descricao(self) -> bool:
-        """Quando TITULOS_API_KEY está configurada, a base de Descrição vem da
-        API do AgentedeTitulos (em vez da planilha DESCRIÇÃO.xlsx)."""
+        """A base de Descrição vem da API do AgentedeTitulos (título, descrição,
+        peso, medidas e bullets) **quando há `TITULOS_API_KEY`** — nesse caso a
+        planilha DESCRIÇÃO.xlsx fica de lado, como desejado.
+
+        Sem a chave, NÃO há como consultar a API, então cai na planilha local
+        (fallback de segurança — evita gerar planilha sem descrição/medidas).
+        `USAR_PLANILHA_DESCRICAO=1` força a planilha mesmo com a chave presente.
+        """
+        if (os.getenv("USAR_PLANILHA_DESCRICAO") or "").strip().lower() in ("1", "true", "sim"):
+            return False
         return bool((os.getenv("TITULOS_API_KEY") or "").strip())
     
     # -------------------------------------------------------------------------
@@ -129,7 +143,38 @@ class Configuracoes:
         "VERD-":  "Verdal",
         "TACN-":  "TACNAR"
     })
-    
+
+    # -------------------------------------------------------------------------
+    # MAPEAMENTO: PREFIXO SKU CLA -> COLUNA DE PREÇO (Modalidade FULL)
+    # -------------------------------------------------------------------------
+    # O FULL usa o modelo CONTA-CLA (ex.: BOX-CLA-3047). Os prefixos diferem
+    # dos do modelo normal (ex.: normal ATNC-/BOX2-/EASYT-/INFIN- vs CLA
+    # ATN-CLA-/BOX-CLA-/EASY-CLA-/INF-CLA-), por isso há um mapa próprio.
+    # O valor é o NOME DA COLUNA na aba CLA da "Precificacao Amazon - Full".
+    # Verdal e Tacnar ainda NÃO têm coluna na precificação → preço fica vazio
+    # (serão adicionadas no futuro; o lookup simplesmente não encontra a coluna).
+    # -------------------------------------------------------------------------
+
+    mapa_prefixo_conta_full: Dict[str, str] = field(default_factory=lambda: {
+        "ATIV-CLA-":  "Ativa",
+        "ATN-CLA-":   "ATN",
+        "BET-CLA-":   "Beta",
+        "BOX-CLA-":   "Box2Brasil",
+        "EASY-CLA-":  "Easytech",
+        "EVERG-CLA-": "Evergreen",
+        "FINT-CLA-":  "Fintech",
+        "FRIS-CLA-":  "Frisco",
+        "INF-CLA-":   "Infinyshop",
+        "JACI-CLA-":  "JACITARA",
+        "MZIA-CLA-":  "Manzia",
+        "NOGO-CLA-":  "Nogora",
+        "RAQ-CLA-":   "Raquena",
+        "TECH-CLA-":  "Tech Place",
+        "VIANN-CLA-": "Vianney",
+        "VERD-CLA-":  "Verdal",   # sem coluna ainda -> preço vazio
+        "TACN-CLA-":  "Tacnar",   # sem coluna ainda -> preço vazio
+    })
+
     # -------------------------------------------------------------------------
     # VALORES FIXOS PADRÃO (Aplicados a todas as categorias)
     # -------------------------------------------------------------------------
@@ -181,7 +226,24 @@ class Configuracoes:
         'peso_do_item_unidade_de_medida': "Quilogramas",
         'unidade_de_medida_do_peso_do_item': "Quilogramas"
     })
-    
+
+    # -------------------------------------------------------------------------
+    # VALORES FIXOS — MODALIDADE FULL (sobrescrevem os padrão)
+    # -------------------------------------------------------------------------
+    # Aplicados por cima de `valores_fixos_padrao` no ProcessadorFULL. O FULL é
+    # enviado pela Logística da Amazon (FBA), então o canal e o modelo de envio
+    # mudam; a origem da mercadoria é fixa em 1. O Código NCM NÃO entra aqui —
+    # é por linha, vindo da planilha Drop-estoque.
+    # -------------------------------------------------------------------------
+
+    valores_fixos_full: Dict[str, str] = field(default_factory=lambda: {
+        'Código do canal de processamento (BR)': "Logística da Amazon (AN)",
+        'Modelo de Envio (BR)': "Modelo padrão da Amazon",
+        'Origem da mercadoria': "1",
+        'Quantidade (BR)': "0",
+        'Quantidade': "0",
+    })
+
     # -------------------------------------------------------------------------
     # COLUNAS QUE SÓ PREENCHEM A PRIMEIRA OCORRÊNCIA
     # -------------------------------------------------------------------------
@@ -271,6 +333,9 @@ class Configuracoes:
         - Mapeamentos estáticos customizados (mesclados em valores_fixos_padrao)
         """
         self.arquivo_precificacao = gerenciador.get("arquivo_precificacao", self.arquivo_precificacao)
+        self.arquivo_precificacao_full = gerenciador.get("arquivo_precificacao_full", self.arquivo_precificacao_full)
+        self.aba_precificacao_full = gerenciador.get("aba_precificacao_full", self.aba_precificacao_full)
+        self.arquivo_drop_estoque = gerenciador.get("arquivo_drop_estoque", self.arquivo_drop_estoque)
         self.arquivo_descricao = gerenciador.get("arquivo_descricao", self.arquivo_descricao)
         self.arquivo_remover = gerenciador.get("arquivo_remover", self.arquivo_remover)
         self.arquivo_substituir = gerenciador.get("arquivo_substituir", self.arquivo_substituir)

@@ -78,7 +78,17 @@ class CarregadorDescricaoAPI(CarregadorDescricao):
             chave = Utilitarios.tratar_sku(alvo, prefixos)
             if not chave or chave in self.dados or chave in self._nao_encontrados:
                 continue
-            row = titulos_client.consultar_sku(chave)
+            # Resiliente: como o modo API agora é o padrão, um erro de API
+            # (key ausente, 429, rede) NÃO pode derrubar o job inteiro — trata
+            # o SKU como não-encontrado (medidas vazias) e registra o motivo.
+            try:
+                row = titulos_client.consultar_sku(chave)
+            except Exception as e:  # TitulosError e afins
+                self._nao_encontrados.add(chave)
+                msg = f"Falha ao consultar Descrição via API para {chave}: {e}"
+                if msg not in self._erros:
+                    self._erros.append(msg)
+                continue
             dados = self._dados_de_row(row) if row else None
             if dados:
                 dados.sku_base = chave

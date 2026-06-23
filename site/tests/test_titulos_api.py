@@ -166,13 +166,27 @@ def test_carregador_api_nao_rebusca_sku_ausente(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_processador_usa_xlsx_sem_chave(monkeypatch):
+    """Sem TITULOS_API_KEY não há como usar a API → cai na planilha local
+    (fallback de segurança; evita planilha sem descrição/medidas)."""
     monkeypatch.delenv("TITULOS_API_KEY", raising=False)
+    monkeypatch.delenv("USAR_PLANILHA_DESCRICAO", raising=False)
     proc = ProcessadorSKU(Configuracoes())
     assert isinstance(proc.carregador_descricao, CarregadorDescricao)
     assert not isinstance(proc.carregador_descricao, CarregadorDescricaoAPI)
 
 
 def test_processador_usa_api_com_chave(monkeypatch):
+    """Com a chave, usa a API (a planilha de Descrição fica de lado)."""
     monkeypatch.setenv("TITULOS_API_KEY", "tsk_x")
+    monkeypatch.delenv("USAR_PLANILHA_DESCRICAO", raising=False)
     proc = ProcessadorSKU(Configuracoes())
     assert isinstance(proc.carregador_descricao, CarregadorDescricaoAPI)
+
+
+def test_processador_forca_xlsx_com_flag(monkeypatch):
+    """USAR_PLANILHA_DESCRICAO=1 força a planilha mesmo com a chave presente."""
+    monkeypatch.setenv("TITULOS_API_KEY", "tsk_x")
+    monkeypatch.setenv("USAR_PLANILHA_DESCRICAO", "1")
+    proc = ProcessadorSKU(Configuracoes())
+    assert isinstance(proc.carregador_descricao, CarregadorDescricao)
+    assert not isinstance(proc.carregador_descricao, CarregadorDescricaoAPI)

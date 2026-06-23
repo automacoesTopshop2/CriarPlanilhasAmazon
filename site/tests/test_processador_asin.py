@@ -17,6 +17,15 @@ from core.config import Configuracoes
 from core.processadores.asin import ProcessadorASIN
 
 
+@pytest.fixture(autouse=True)
+def _forcar_descricao_planilha(monkeypatch):
+    """Estes testes validam a leitura da planilha de Descrição local. Como o
+    padrão do sistema passou a ser a API do AgentedeTitulos, força aqui o
+    modo-planilha determinístico (sem key), independente do ambiente."""
+    monkeypatch.delenv("TITULOS_API_KEY", raising=False)
+    monkeypatch.setenv("USAR_PLANILHA_DESCRICAO", "1")
+
+
 def _template_asin_com_colunas(cabecalhos):
     """Gera template ListaASINS in-memory com os cabeçalhos pedidos na linha 4."""
     wb = openpyxl.Workbook()

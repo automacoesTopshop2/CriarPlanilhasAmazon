@@ -41,6 +41,10 @@
                 <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                 <span>Criar por ASIN</span>
             </a>
+            <a href="{{ url_for('page_full') }}" class="nav__item {% if active == 'full' %}is-active{% endif %}">
+                <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 8h-3V4H3a1 1 0 0 0-1 1v11h2"/><path d="M14 9h4l3 3v4h-2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/><line x1="9" y1="18" x2="15" y2="18"/></svg>
+                <span>Criar FULL</span>
+            </a>
             <a href="{{ url_for('page_limpeza') }}" class="nav__item {% if active == 'limpeza' %}is-active{% endif %}">
                 <svg class="nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18l-2 13H5L3 6z"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                 <span>Limpeza</span>

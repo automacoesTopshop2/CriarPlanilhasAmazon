@@ -26,6 +26,9 @@ _tests_web.py
 # Configuração persistida do app (pode conter caminhos sensíveis)
 app_config.json
 
+# Estado de runtime da sincronização de precificação (frescor)
+_sync_precificacao.json
+
 # Banco SQLite local
 site/instance/
 *.db
