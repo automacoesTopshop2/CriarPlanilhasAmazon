@@ -506,7 +506,10 @@ def create_app(config_overrides: Optional[Dict[str, Any]] = None) -> Flask:
         csp = {
             "default-src": "'self'",
             "script-src": "'self'",
-            "style-src": ["'self'", "https://fonts.googleapis.com"],
+            # Os templates atuais ainda usam style="" em pontos pequenos da UI.
+            # Mantemos scripts com nonce, mas permitimos estilos inline ate a
+            # limpeza desses estilos para classes CSS.
+            "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
             "font-src": ["'self'", "https://fonts.gstatic.com"],
             "img-src": ["'self'", "data:"],
             "connect-src": "'self'",

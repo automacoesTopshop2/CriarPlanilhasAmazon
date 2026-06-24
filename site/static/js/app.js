@@ -644,7 +644,7 @@
         const tabs = document.querySelectorAll(opts.tabSelector || '.modo-tabs__tab');
         const cardPlanilha = document.getElementById(opts.cardPlanilhaId || 'card-planilha');
         const cardManual = document.getElementById(opts.cardManualId || 'card-manual');
-        if (!cardPlanilha || !cardManual) return;
+        if (!cardManual) return;
 
         tabs.forEach(tab => tab.addEventListener('click', () => {
             tabs.forEach(t => {
@@ -653,7 +653,7 @@
                 t.setAttribute('aria-selected', ativa ? 'true' : 'false');
             });
             const modo = tab.getAttribute('data-modo');
-            cardPlanilha.classList.toggle('hide', modo !== 'planilha');
+            if (cardPlanilha) cardPlanilha.classList.toggle('hide', modo !== 'planilha');
             cardManual.classList.toggle('hide', modo !== 'manual');
             // Elementos que só fazem sentido no modo Planilha (steps, info-card).
             document.querySelectorAll('[data-so-planilha]').forEach(el =>
@@ -708,8 +708,15 @@
                     return;
                 }
                 contas = data.contas || [];
+                if (opts.filtroTipoCanal) {
+                    const canal = String(opts.filtroTipoCanal).toUpperCase();
+                    contas = contas.filter(c => String(c.tipo_canal || '').toUpperCase() === canal);
+                }
                 if (!contas.length) {
-                    selectDefault.innerHTML = `<option value="">Nenhuma conta com codigo_externo cadastrada</option>`;
+                    const msg = opts.filtroTipoCanal
+                        ? `Nenhuma conta ${escape(String(opts.filtroTipoCanal).toUpperCase())} com codigo_externo cadastrada`
+                        : 'Nenhuma conta com codigo_externo cadastrada';
+                    selectDefault.innerHTML = `<option value="">${msg}</option>`;
                     if (refresh) toast('Nenhuma conta cadastrada no BDAmazon.', 'err');
                     return;
                 }

@@ -100,6 +100,14 @@ class CarregadorDescricao:
         self._data_carregamento: Optional[datetime] = None
         self._erros: List[str] = []
         self._linha_cabecalho: int = 1
+
+    def _prefixos_para_remover(self) -> List[str]:
+        prefixos = list(self.config.mapa_prefixo_conta.keys())
+        mapa_full = getattr(self.config, "mapa_prefixo_conta_full", {}) or {}
+        for prefixo in mapa_full.keys():
+            if prefixo not in prefixos:
+                prefixos.append(prefixo)
+        return prefixos
     
     @property
     def esta_carregado(self) -> bool:
@@ -270,7 +278,7 @@ class CarregadorDescricao:
         # Trata o SKU
         sku_base = Utilitarios.tratar_sku(
             sku_valor,
-            list(self.config.mapa_prefixo_conta.keys())
+            self._prefixos_para_remover()
         )
         
         if not sku_base:
@@ -321,7 +329,7 @@ class CarregadorDescricao:
         
         sku_base = Utilitarios.tratar_sku(
             sku,
-            list(self.config.mapa_prefixo_conta.keys())
+            self._prefixos_para_remover()
         )
         
         if not sku_base:

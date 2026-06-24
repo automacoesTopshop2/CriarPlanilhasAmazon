@@ -120,12 +120,20 @@ class Utilitarios:
         
         # Converte para string e padroniza
         sku_tratado = str(sku).strip().upper()
-        
-        # Remove prefixos de conta se fornecidos
+
+        # Remove o prefixo de conta — apenas UM, o MAIS LONGO que casa no início.
+        # Usar startswith (ancorado) + ordem por tamanho decrescente evita o bug
+        # de prefixos sobrepostos: ex. "NOGO-CLA-9652" deve casar "NOGO-CLA-"
+        # (e virar "9652"), NÃO o prefixo normal "NOGO-" (que deixaria "CLA-9652").
         if prefixos_para_remover:
-            for prefixo in prefixos_para_remover:
-                sku_tratado = sku_tratado.replace(prefixo.upper(), "")
-        
+            for prefixo in sorted(
+                (p for p in prefixos_para_remover if p), key=len, reverse=True
+            ):
+                prefixo_upper = prefixo.upper()
+                if sku_tratado.startswith(prefixo_upper):
+                    sku_tratado = sku_tratado[len(prefixo_upper):]
+                    break
+
         # Remove sufixo de variação (-V1, -V2, etc.)
         if "-V" in sku_tratado:
             sku_tratado = sku_tratado.split("-V")[0]

@@ -59,7 +59,7 @@ class CarregadorDescricaoAPI(CarregadorDescricao):
         if not self._carregado:
             return None
         sku_base = Utilitarios.tratar_sku(
-            sku, list(self.config.mapa_prefixo_conta.keys())
+            sku, self._prefixos_para_remover()
         )
         if not sku_base:
             return None
@@ -69,7 +69,7 @@ class CarregadorDescricaoAPI(CarregadorDescricao):
         return super().obter_produto(sku)
 
     def _garantir_carregado(self, sku_base: str) -> None:
-        prefixos = list(self.config.mapa_prefixo_conta.keys())
+        prefixos = self._prefixos_para_remover()
         componentes = self._skus_componentes(sku_base)
         # Kit não existe no catálogo (1 linha por produto); buscamos só os
         # componentes. Produto simples: buscamos ele mesmo.
@@ -99,7 +99,7 @@ class CarregadorDescricaoAPI(CarregadorDescricao):
     def _dados_de_row(self, row: dict) -> Optional[DadosProduto]:
         sku = str(row.get("sku") or "").strip()
         sku_base = Utilitarios.tratar_sku(
-            sku, list(self.config.mapa_prefixo_conta.keys())
+            sku, self._prefixos_para_remover()
         )
         if not sku_base:
             return None

@@ -12,6 +12,7 @@ import pytest
 from core import titulos_client
 from core.config import Configuracoes
 from core.carregadores import CarregadorDescricao, CarregadorDescricaoAPI
+from core.carregadores.descricao import DadosProduto
 from core.processadores.sku import ProcessadorSKU
 
 
@@ -109,6 +110,29 @@ def test_carregador_api_mapeia_campos_e_ean_vazio(monkeypatch):
     assert p.ean == ""                      # EAN NÃO vem da API (fica c/ operador)
     assert p.peso == "0.058" and p.altura == "8"
     assert p.topicos == ["b1", "b2", "b3", "b4", "b5"]
+
+
+def test_carregador_api_remove_prefixo_full_antes_da_consulta(monkeypatch):
+    chamadas = []
+
+    def fake(sku):
+        chamadas.append(sku)
+        return _row(sku=sku) if sku == "5675" else None
+
+    monkeypatch.setattr(titulos_client, "consultar_sku", fake)
+    c = CarregadorDescricaoAPI(Configuracoes())
+    c.carregar()
+    p = c.obter_produto("BOX-CLA-5675")
+    assert p is not None
+    assert p.peso == "0.058"
+    assert chamadas == ["5675"]
+
+
+def test_carregador_xlsx_remove_prefixo_full_na_busca():
+    c = CarregadorDescricao(Configuracoes())
+    c._carregado = True
+    c.dados["5675"] = DadosProduto(sku_base="5675", peso="0.058")
+    assert c.obter_produto("BOX-CLA-5675").peso == "0.058"
 
 
 def test_carregador_api_titulo_cai_para_ml(monkeypatch):

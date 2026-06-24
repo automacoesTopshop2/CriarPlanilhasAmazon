@@ -31,6 +31,7 @@ class TestHeadersSeguranca:
         c = app_com_talisman.test_client()
         r = c.get("/login")
         assert "Content-Security-Policy" in r.headers
+        assert "'unsafe-inline'" in r.headers["Content-Security-Policy"]
 
     def test_x_frame_options_deny(self, app_com_talisman):
         c = app_com_talisman.test_client()
