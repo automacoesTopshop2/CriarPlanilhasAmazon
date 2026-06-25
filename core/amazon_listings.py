@@ -205,6 +205,39 @@ def criar_produto_por_sku(
     return sp.put_listing(sku, body, mode=mode)
 
 
+def asins_ja_listados(asins: list[str]) -> dict[str, list[str]]:
+    """Mapa {asin: [skus]} dos ASINs que JÁ têm anúncio do seller na conta.
+
+    Agrupa em lotes de 20 (limite do searchListingsItems) e consulta a SP-API.
+    ASINs sem anúncio simplesmente não aparecem no resultado. Erros de uma
+    chamada não derrubam as demais (o ASIN fica como "não verificado" → ausente).
+    """
+    limpos: list[str] = []
+    vistos: set[str] = set()
+    for a in asins:
+        a = (a or "").strip()
+        if a and a not in vistos:
+            vistos.add(a)
+            limpos.append(a)
+
+    encontrados: dict[str, list[str]] = {}
+    for i in range(0, len(limpos), 20):
+        lote = limpos[i:i + 20]
+        try:
+            resp = sp.buscar_listings(lote, tipo="ASIN")
+        except sp.AmazonSPError:
+            continue
+        for item in (resp.get("items") or []):
+            sku = item.get("sku") or ""
+            for s in (item.get("summaries") or []):
+                asin = (s.get("asin") or "").strip()
+                if asin:
+                    encontrados.setdefault(asin, [])
+                    if sku and sku not in encontrados[asin]:
+                        encontrados[asin].append(sku)
+    return encontrados
+
+
 def resumo_issues(resposta: dict) -> dict:
     """Extrai um resumo amigável da resposta do put_listing."""
     issues = resposta.get("issues") or []

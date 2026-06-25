@@ -62,6 +62,7 @@
         <div class="card__sub">Cole <strong>SKU raiz</strong> e <strong>ASIN</strong> (um por linha, na mesma ordem). O preço é puxado da Precificação (conta TACNAR) e o estoque vai como 0.</div>
     </div></div>
     <div class="card__body">
+        <div class="text-muted text-sm mb-6">ℹ️ A Amazon não limita o total de anúncios, mas processa cerca de <strong>5 criações por segundo</strong>. Recomendado até <strong>~200 ASINs por envio</strong> — o sistema cria em lotes e mostra o status de cada um. Para listas maiores, divida em mais de um envio para acompanhar o resultado.</div>
         <div class="grid grid--2">
             <div class="field">
                 <label class="label" for="amz-oferta-skus">SKU raiz (1 por linha)</label>
@@ -73,6 +74,7 @@
             </div>
         </div>
         <div class="manual-actions mt-3">
+            <button type="button" class="btn" data-amz-acao="verificar" data-amz-fonte="oferta" {% if not amazon_disponivel %}disabled{% endif %}>Verificar duplicados</button>
             <button type="button" class="btn btn--dark" data-amz-acao="validar" data-amz-fonte="oferta" {% if not amazon_disponivel %}disabled{% endif %}>Validar (não publica)</button>
             <button type="button" class="btn btn--primary" data-amz-acao="publicar" data-amz-fonte="oferta" {% if not amazon_disponivel %}disabled{% endif %}>Publicar de verdade</button>
         </div>
@@ -123,6 +125,7 @@
 (function () {
     const epOferta = "{{ url_for('api_amazon_criar_oferta') }}";
     const epProduto = "{{ url_for('api_amazon_criar_produto') }}";
+    const epVerificar = "{{ url_for('api_amazon_verificar_asins') }}";
     const host = document.getElementById('amz-resultado');
     // csrf() vem do app.js (window.csrf); fallback local lê o meta diretamente.
     const csrf = window.csrf || function () {
@@ -166,40 +169,191 @@
             });
     }
 
+    // Quantos itens por requisição. Lotes pequenos mantêm cada chamada bem
+    // abaixo do timeout do gunicorn/proxy (evita o "upstream error").
+    const BATCH = 5;
+
+    function chunk(arr, n) {
+        const out = [];
+        for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+        return out;
+    }
+
+    // Faz UMA requisição e devolve o JSON parseado. Lança erro legível quando o
+    // servidor não responde JSON (ex.: proxy devolve "upstream error" em texto puro
+    // após timeout/queda do worker).
+    async function enviarLote(endpoint, body) {
+        const r = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+            body: JSON.stringify(body),
+        });
+        const txt = await r.text();
+        let data;
+        try { data = JSON.parse(txt); }
+        catch (_) {
+            const trecho = (txt || '').trim().slice(0, 120) || '(resposta vazia)';
+            if (r.status === 502 || r.status === 503 || r.status === 504 || /upstream error/i.test(txt)) {
+                throw new Error(`o servidor demorou demais e derrubou a requisição (HTTP ${r.status}). ` +
+                    `Este lote pode ter sido criado parcialmente na Amazon — confira lá antes de reenviar.`);
+            }
+            throw new Error(`resposta inesperada do servidor (HTTP ${r.status}): ${trecho}`);
+        }
+        if (!r.ok || !data.sucesso) {
+            throw new Error(data && data.mensagem ? data.mensagem : `falha (HTTP ${r.status})`);
+        }
+        return data;
+    }
+
+    // Consulta o backend: quais ASINs já existem na conta + repetidos na lista.
+    async function verificarAsins(asins) {
+        return await enviarLote(epVerificar, { asins });
+    }
+
+    function setBotoes(desabilitar) {
+        document.querySelectorAll('[data-amz-acao]').forEach(b => b.disabled = desabilitar);
+    }
+
+    // Remove itens cujo ASIN já existe na conta OU que se repetem na lista (mantém o 1º).
+    function filtrarDuplicados(itens, existentes) {
+        const exSet = new Set(Object.keys(existentes || {}).map(s => s.toUpperCase()));
+        const vistos = new Set();
+        return itens.filter(it => {
+            const a = (it.asin || '').toUpperCase();
+            if (!a) return true;
+            if (exSet.has(a) || vistos.has(a)) return false;
+            vistos.add(a);
+            return true;
+        });
+    }
+
+    // Painel de duplicados. Resolve com 'remover' | 'prosseguir' | 'cancelar'.
+    function painelDuplicados(existentes, dupLista, opts) {
+        opts = opts || {};
+        return new Promise(resolve => {
+            const exKeys = Object.keys(existentes || {});
+            const nEx = exKeys.length, nDup = (dupLista || []).length;
+            if (!nEx && !nDup) {
+                host.innerHTML = `<div class="card"><div class="card__body">
+                    <div class="fw-600">Nenhum duplicado encontrado ✓</div>
+                    <div class="text-muted text-sm mt-2">Nenhum desses ASINs já tem anúncio na conta TACNAR e não há repetidos na lista.</div>
+                    </div></div>`;
+                resolve('prosseguir'); return;
+            }
+            const linhasEx = exKeys.map(a =>
+                `<tr><td><code>${escape(a)}</code></td><td><code>${escape((existentes[a] || []).join(', ') || '—')}</code></td></tr>`).join('');
+            const blocoEx = nEx ? `
+                <div class="fw-600 mt-3">${nEx} ASIN(s) já têm anúncio na conta TACNAR:</div>
+                <div style="overflow-x:auto"><table class="tbl-manual"><thead><tr><th>ASIN</th><th>SKU(s) já cadastrado(s)</th></tr></thead><tbody>${linhasEx}</tbody></table></div>` : '';
+            const blocoDup = nDup ? `
+                <div class="fw-600 mt-3">${nDup} ASIN(s) repetido(s) na lista colada:</div>
+                <div class="text-sm mt-2">${(dupLista || []).map(a => `<code>${escape(a)}</code>`).join(', ')}</div>` : '';
+            const botoes = opts.somenteInfo
+                ? `<button type="button" class="btn btn--dark" data-dup="cancelar">Fechar</button>`
+                : `<button type="button" class="btn btn--dark" data-dup="remover">Remover duplicados e continuar</button>
+                   <button type="button" class="btn" data-dup="prosseguir">Criar mesmo assim</button>
+                   <button type="button" class="btn" data-dup="cancelar">Cancelar</button>`;
+            host.innerHTML = `<div class="card"><div class="card__header"><div>
+                <div class="card__title">Duplicados encontrados</div>
+                <div class="card__sub">Revise antes de criar.</div></div></div>
+                <div class="card__body">${blocoEx}${blocoDup}
+                <div class="manual-actions mt-6">${botoes}</div></div></div>`;
+            host.querySelectorAll('[data-dup]').forEach(b =>
+                b.addEventListener('click', () => resolve(b.getAttribute('data-dup'))));
+        });
+    }
+
+    // Ação do botão "Verificar duplicados" (só informa, não cria).
+    async function verificarSomente(fonte) {
+        if (fonte !== 'oferta') return;
+        const itens = parseOferta();
+        if (!itens.length) { toast('Preencha SKU raiz e ASIN.', 'err'); return; }
+        const asins = itens.map(it => it.asin).filter(Boolean);
+        setBotoes(true);
+        host.innerHTML = '<div class="card"><div class="card__body">Verificando duplicados…</div></div>';
+        try {
+            const chk = await verificarAsins(asins);
+            await painelDuplicados(chk.existentes, chk.duplicados_lista, { somenteInfo: true });
+        } catch (e) {
+            host.innerHTML = ''; toast('Falha ao verificar: ' + e.message, 'err');
+        } finally {
+            setBotoes(false);
+        }
+    }
+
     async function enviar(fonte, publicar) {
-        let endpoint, body;
+        let endpoint, itens, baseBody;
         if (fonte === 'oferta') {
-            const itens = parseOferta();
+            itens = parseOferta();
             if (!itens.length) { toast('Preencha SKU raiz e ASIN.', 'err'); return; }
-            endpoint = epOferta; body = { itens, publicar };
+            endpoint = epOferta; baseBody = { publicar };
         } else {
-            const itens = parseProduto();
+            itens = parseProduto();
             if (!itens.length) { toast('Cole ao menos uma linha (SKU ; EAN).', 'err'); return; }
             endpoint = epProduto;
-            body = {
-                itens, publicar,
+            baseBody = {
+                publicar,
                 categoria: document.getElementById('amz-prod-categoria').value,
                 marca: document.getElementById('amz-prod-marca').value.trim(),
             };
         }
-        if (publicar && !confirm(`Publicar ${body.itens.length} item(ns) DE VERDADE na Amazon (conta TACNAR)?`)) return;
+
+        // Checagem de duplicados antes de criar (só faz sentido por ASIN → modo oferta).
+        if (fonte === 'oferta') {
+            setBotoes(true);
+            host.innerHTML = '<div class="card"><div class="card__body">Verificando duplicados…</div></div>';
+            let chk;
+            try {
+                chk = await verificarAsins(itens.map(it => it.asin).filter(Boolean));
+            } catch (e) {
+                host.innerHTML = ''; toast('Falha ao verificar duplicados: ' + e.message, 'err');
+                setBotoes(false); return;
+            }
+            setBotoes(false);
+            const temDup = Object.keys(chk.existentes || {}).length || (chk.duplicados_lista || []).length;
+            if (temDup) {
+                const acao = await painelDuplicados(chk.existentes, chk.duplicados_lista, { somenteInfo: false });
+                if (acao === 'cancelar') { host.innerHTML = ''; return; }
+                if (acao === 'remover') {
+                    itens = filtrarDuplicados(itens, chk.existentes);
+                    if (!itens.length) { host.innerHTML = ''; toast('Nada a criar após remover duplicados.', 'err'); return; }
+                }
+            }
+        }
+
+        if (publicar && !confirm(`Publicar ${itens.length} item(ns) DE VERDADE na Amazon (conta TACNAR)?`)) return;
 
         document.querySelectorAll('[data-amz-acao]').forEach(b => b.disabled = true);
-        host.innerHTML = '<div class="card"><div class="card__body">Processando ' + body.itens.length + ' item(ns)…</div></div>';
+
+        const lotes = chunk(itens, BATCH);
+        const resultados = [];
+        let meta = null;
+        let erroParcial = null;
         try {
-            const r = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
-                body: JSON.stringify(body),
-            });
-            const data = await r.json();
-            if (!data.sucesso) { host.innerHTML = ''; toast(data.mensagem || 'Falha', 'err'); return; }
-            render(data, fonte);
-        } catch (e) {
-            host.innerHTML = ''; toast('Erro de rede: ' + e, 'err');
+            for (let i = 0; i < lotes.length; i++) {
+                host.innerHTML = '<div class="card"><div class="card__body">Processando lote ' +
+                    (i + 1) + '/' + lotes.length + ' — ' + resultados.length + '/' + itens.length + ' item(ns)…</div></div>';
+                let data;
+                try {
+                    data = await enviarLote(endpoint, Object.assign({}, baseBody, { itens: lotes[i] }));
+                } catch (e) {
+                    // Para no primeiro lote que falhar, mas preserva o que já voltou.
+                    erroParcial = 'Lote ' + (i + 1) + '/' + lotes.length + ': ' + e.message;
+                    break;
+                }
+                if (!meta) meta = data;
+                resultados.push(...(data.resultados || []));
+            }
         } finally {
             document.querySelectorAll('[data-amz-acao]').forEach(b => b.disabled = false);
         }
+
+        if (resultados.length) {
+            render(Object.assign({}, meta, { resultados }), fonte);
+        } else {
+            host.innerHTML = '';
+        }
+        if (erroParcial) toast(erroParcial, 'err');
     }
 
     function render(data, fonte) {
@@ -234,8 +388,12 @@
 
     function escape(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
-    document.querySelectorAll('[data-amz-acao]').forEach(btn => btn.addEventListener('click', () =>
-        enviar(btn.getAttribute('data-amz-fonte'), btn.getAttribute('data-amz-acao') === 'publicar')));
+    document.querySelectorAll('[data-amz-acao]').forEach(btn => btn.addEventListener('click', () => {
+        const fonte = btn.getAttribute('data-amz-fonte');
+        const acao = btn.getAttribute('data-amz-acao');
+        if (acao === 'verificar') return verificarSomente(fonte);
+        enviar(fonte, acao === 'publicar');
+    }));
 })();
 </script>
 {% endblock %}

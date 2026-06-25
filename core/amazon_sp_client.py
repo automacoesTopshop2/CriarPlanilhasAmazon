@@ -237,6 +237,31 @@ def participacoes() -> dict:
     return _request("GET", "/sellers/v1/marketplaceParticipations")
 
 
+def buscar_listings(identificadores: list[str], *, tipo: str = "ASIN",
+                    included: str = "summaries") -> dict:
+    """GET /listings/2021-08-01/items/{sellerId} — anúncios JÁ existentes do seller.
+
+    Filtra pelos `identificadores` (até 20 por chamada, limite da SP-API) do tipo
+    `tipo` (ASIN, SKU, EAN, ...). Devolve o corpo com `items` (cada um com `sku` e
+    `summaries[].asin`). Use para detectar duplicatas antes de criar.
+    """
+    ids = [str(x).strip() for x in identificadores if str(x).strip()]
+    if not ids:
+        return {"items": []}
+    if len(ids) > 20:
+        raise AmazonSPError("buscar_listings aceita no máximo 20 identificadores por chamada.")
+    return _request(
+        "GET", f"/listings/2021-08-01/items/{quote(seller_id(), safe='')}",
+        params={
+            "marketplaceIds": marketplace_id(),
+            "identifiers": ",".join(ids),
+            "identifiersType": tipo,
+            "includedData": included,
+            "pageSize": 20,
+        },
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Criação/validação de anúncio (Listings Items)
 # --------------------------------------------------------------------------- #

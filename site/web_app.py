@@ -1187,6 +1187,44 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
                         "modo": "publicado" if publicar else "validado",
                         "resultados": resultados})
 
+    @app.route("/api/amazon/verificar-asins", methods=["POST"])
+    @login_required
+    def api_amazon_verificar_asins():
+        """Verifica quais ASINs já têm anúncio na conta TACNAR (antes de criar).
+
+        Body: {asins:[...]}. Devolve {existentes:{asin:[skus]}, duplicados_lista:[asin],
+        total_verificados:int}. Barato: searchListingsItems em lotes de 20.
+        """
+        if not amazon_sp_client.credenciais_ok():
+            return jsonify({"sucesso": False,
+                            "mensagem": "Credenciais da Amazon SP-API não configuradas no servidor."}), 503
+        data = request.get_json(silent=True) or {}
+        asins_raw = data.get("asins")
+        if not isinstance(asins_raw, list):
+            return jsonify({"sucesso": False, "mensagem": "'asins' precisa ser uma lista."}), 400
+
+        # ASINs repetidos na própria lista colada (detecção local).
+        norm = [(a or "").strip().upper() for a in asins_raw]
+        vistos: set[str] = set()
+        duplicados_lista: list[str] = []
+        for a in norm:
+            if not a:
+                continue
+            if a in vistos and a not in duplicados_lista:
+                duplicados_lista.append(a)
+            vistos.add(a)
+
+        try:
+            existentes = amazon_listings.asins_ja_listados(list(vistos))
+        except amazon_sp_client.AmazonSPError as e:
+            return jsonify({"sucesso": False, "mensagem": str(e)[:300]}), 502
+        return jsonify({
+            "sucesso": True,
+            "existentes": existentes,
+            "duplicados_lista": duplicados_lista,
+            "total_verificados": len(vistos),
+        })
+
     @app.route("/api/amazon/criar-produto", methods=["POST"])
     @login_required
     def api_amazon_criar_produto():
