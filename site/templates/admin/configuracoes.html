@@ -163,40 +163,86 @@
     <section class="tab-panel" data-panel="prefixos">
         <div class="card__header">
             <div>
-                <h2 class="card__section-title">Prefixos de Conta</h2>
+                <h2 class="card__section-title">Prefixos de Conta → Coluna de Preço</h2>
                 <p class="card__hint">
                     Cada prefixo de SKU determina qual coluna da planilha de preços usar.
-                    Quando uma conta nova entrar na precificação, adicione o prefixo correspondente.
+                    <strong>Há duas modalidades separadas</strong> — confira em qual você está mexendo:
+                    o <em>Modelo Normal</em> usa a <code>Precificacao.xlsx</code>; a <em>Modalidade FULL</em>
+                    usa a aba <code>CLA</code> da <code>Precificacao Amazon - Full.xlsx</code>.
                 </p>
             </div>
         </div>
 
-        <table class="table">
-            <thead><tr><th>Prefixo</th><th>Conta</th><th></th></tr></thead>
-            <tbody id="tbody-prefixos">
-                {% for pref, conta in snapshot.mapa_prefixo.items()|sort %}
-                <tr data-prefixo="{{ pref }}" data-conta="{{ conta }}">
-                    <td><code>{{ pref }}</code></td>
-                    <td>{{ conta }}</td>
-                    <td class="row-actions">
-                        <button class="btn btn--xs" data-action="editar-prefixo">editar</button>
-                        {% if pref in snapshot.mapa_prefixo_customizados %}
-                        <button class="btn btn--xs btn--danger" data-action="remover-prefixo">remover</button>
-                        {% else %}
-                        <span class="text-muted">padrão</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <!-- ===== MODELO NORMAL ===== -->
+        <div class="modalidade-bloco modalidade-bloco--normal">
+            <h3 class="card__section-title">
+                <span class="badge badge--info">MODELO NORMAL</span>
+                Prefixos — Precificação padrão
+            </h3>
+            <table class="table">
+                <thead><tr><th>Prefixo</th><th>Coluna/Conta</th><th></th></tr></thead>
+                <tbody id="tbody-prefixos">
+                    {% for pref, conta in snapshot.mapa_prefixo.items()|sort %}
+                    <tr data-prefixo="{{ pref }}" data-conta="{{ conta }}" data-mapa="normal">
+                        <td><code>{{ pref }}</code></td>
+                        <td>{{ conta }}</td>
+                        <td class="row-actions">
+                            <button class="btn btn--xs" data-action="editar-prefixo">editar</button>
+                            {% if pref in snapshot.mapa_prefixo_customizados %}
+                            <button class="btn btn--xs btn--danger" data-action="remover-prefixo">remover</button>
+                            {% else %}
+                            <span class="text-muted">padrão</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <form id="form-novo-prefixo" class="form-inline">
+                <input class="field__input" id="input-prefixo" placeholder="ex.: NOVA-" maxlength="16">
+                <input class="field__input" id="input-conta" placeholder="ex.: NovaConta (nome da coluna)">
+                <button type="submit" class="btn btn--primary">Adicionar ao Normal</button>
+            </form>
+        </div>
 
-        <h3 class="card__section-title">Adicionar prefixo</h3>
-        <form id="form-novo-prefixo" class="form-inline">
-            <input class="field__input" id="input-prefixo" placeholder="ex.: NOVA-" maxlength="10">
-            <input class="field__input" id="input-conta" placeholder="ex.: NovaConta">
-            <button type="submit" class="btn btn--primary">Adicionar</button>
-        </form>
+        <!-- ===== MODALIDADE FULL ===== -->
+        <div class="modalidade-bloco modalidade-bloco--full" style="margin-top:28px">
+            <h3 class="card__section-title">
+                <span class="badge badge--good">MODALIDADE FULL (CLA)</span>
+                Prefixos — Precificação Full (aba CLA)
+            </h3>
+            <p class="card__hint">
+                Contas <code>*-CLA-*</code> (ex.: <code>BOX-CLA-</code>). O valor é o
+                <strong>nome exato da coluna</strong> na aba CLA da Precificação Full
+                (ex.: <code>Box2Brasil</code>). ⚠️ Adicionar aqui NÃO cria a conta no BDAmazon —
+                para a conta aparecer no seletor de <em>Criar FULL</em>, ela precisa existir no
+                BDAmazon como tipo CLA e com <code>codigo_externo</code>.
+            </p>
+            <table class="table">
+                <thead><tr><th>Prefixo (CLA)</th><th>Coluna na Precificação Full</th><th></th></tr></thead>
+                <tbody id="tbody-prefixos-full">
+                    {% for pref, conta in snapshot.mapa_prefixo_full.items()|sort %}
+                    <tr data-prefixo="{{ pref }}" data-conta="{{ conta }}" data-mapa="full">
+                        <td><code>{{ pref }}</code></td>
+                        <td>{{ conta }}</td>
+                        <td class="row-actions">
+                            <button class="btn btn--xs" data-action="editar-prefixo-full">editar</button>
+                            {% if pref in snapshot.mapa_prefixo_full_customizados %}
+                            <button class="btn btn--xs btn--danger" data-action="remover-prefixo-full">remover</button>
+                            {% else %}
+                            <span class="text-muted">padrão</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <form id="form-novo-prefixo-full" class="form-inline">
+                <input class="field__input" id="input-prefixo-full" placeholder="ex.: LUMA-CLA-" maxlength="20">
+                <input class="field__input" id="input-conta-full" placeholder="ex.: Lumar (coluna na aba CLA)">
+                <button type="submit" class="btn btn--primary">Adicionar ao FULL</button>
+            </form>
+        </div>
     </section>
 
     <!-- Tab: onedrive ------------------------------------------------ -->
@@ -311,17 +357,18 @@
 <div class="modal" id="modal-prefixo" hidden>
     <div class="modal__backdrop" data-close></div>
     <div class="modal__panel">
-        <h2 class="modal__title">Editar prefixo</h2>
+        <h2 class="modal__title">Editar prefixo <span id="prefixo-edit-modalidade-lbl" class="text-muted"></span></h2>
         <form id="form-editar-prefixo">
             <label class="field">
                 <span class="field__label">Prefixo</span>
-                <input class="field__input" id="prefixo-edit-nome" required maxlength="10">
+                <input class="field__input" id="prefixo-edit-nome" required maxlength="20">
             </label>
             <label class="field">
-                <span class="field__label">Conta</span>
+                <span class="field__label">Coluna/Conta</span>
                 <input class="field__input" id="prefixo-edit-conta" required>
             </label>
             <input type="hidden" id="prefixo-edit-original">
+            <input type="hidden" id="prefixo-edit-mapa" value="normal">
             <div class="modal__actions">
                 <button type="button" class="btn btn--ghost" data-close>Cancelar</button>
                 <button type="submit" class="btn btn--primary">Salvar</button>

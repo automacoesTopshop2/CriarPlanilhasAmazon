@@ -134,6 +134,35 @@ class TestPrefixos:
         assert r.status_code == 400
 
 
+class TestPrefixosFull:
+    """Prefixos da modalidade FULL (mapa isolado do normal)."""
+
+    def test_adicionar_prefixo_full(self, client, app, login_admin):
+        r = client.post("/api/config/prefixos-full", json={
+            "prefixo": "LUMA-CLA", "conta": "Lumar",
+        })
+        assert r.status_code == 200
+        cfg = app.config["APP_CONFIG"]
+        assert cfg.mapa_prefixo_conta_full.get("LUMA-CLA-") == "Lumar"
+        # Não vaza para o mapa normal
+        assert "LUMA-CLA-" not in cfg.mapa_prefixo_conta
+
+    def test_remover_prefixo_full(self, client, app, login_admin):
+        client.post("/api/config/prefixos-full", json={"prefixo": "ZZ-CLA-", "conta": "Zeta"})
+        r = client.delete("/api/config/prefixos-full/ZZ-CLA-")
+        assert r.status_code == 200
+        assert "ZZ-CLA-" not in app.config["APP_CONFIG"].mapa_prefixo_conta_full
+
+    def test_snapshot_inclui_mapa_full(self, client, login_admin):
+        r = client.get("/api/config")
+        assert r.status_code == 200
+        assert "mapa_prefixo_full" in r.get_json()
+
+    def test_campos_obrigatorios_full(self, client, login_admin):
+        r = client.post("/api/config/prefixos-full", json={"prefixo": "", "conta": ""})
+        assert r.status_code == 400
+
+
 class TestArquivosUrl:
     def test_atualizar_arquivos(self, client, app, login_admin):
         r = client.put("/api/config/arquivos", json={

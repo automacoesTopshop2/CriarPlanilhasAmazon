@@ -112,8 +112,10 @@ def _snapshot():
     if cfg:
         mapa_colunas_efetivo = {k: list(v) for k, v in cfg.mapa_colunas_descricao.items()}
     mapa_prefixo_efetivo = {}
+    mapa_prefixo_full_efetivo = {}
     if cfg:
         mapa_prefixo_efetivo = dict(cfg.mapa_prefixo_conta)
+        mapa_prefixo_full_efetivo = dict(getattr(cfg, "mapa_prefixo_conta_full", {}))
     mapa_precificacao_efetivo = {}
     if cfg:
         mapa_precificacao_efetivo = {
@@ -137,6 +139,8 @@ def _snapshot():
         "mapa_precificacao_customizados": g.mapa_colunas_precificacao(),
         "mapa_prefixo": mapa_prefixo_efetivo,
         "mapa_prefixo_customizados": g.mapa_prefixo_conta(),
+        "mapa_prefixo_full": mapa_prefixo_full_efetivo,
+        "mapa_prefixo_full_customizados": g.mapa_prefixo_conta_full(),
         "sharepoint": _sharepoint_status(),
     }
 
@@ -376,6 +380,56 @@ def api_prefixo_del(prefixo: str):
     if cfg:
         g.inicializar_mapa_prefixo_de_efetivo(dict(cfg.mapa_prefixo_conta))
     g.remover_prefixo(prefixo)
+    _reaplica_config()
+    return jsonify({"sucesso": True, "estado": _snapshot()})
+
+
+# ---- prefixos de conta — MODALIDADE FULL (CLA) ----
+
+@config_bp.route("/api/config/prefixos-full", methods=["POST"])
+@login_required
+@requer_admin
+def api_prefixo_full_add():
+    _csrf()
+    data = request.get_json(silent=True) or {}
+    prefixo = (data.get("prefixo") or "").strip().upper()
+    conta = (data.get("conta") or "").strip()
+    if not prefixo or not conta:
+        return jsonify({"sucesso": False, "mensagem": "Prefixo e coluna são obrigatórios."}), 400
+    _gerenciador().adicionar_prefixo_full(prefixo, conta)
+    _reaplica_config()
+    return jsonify({"sucesso": True, "estado": _snapshot()})
+
+
+@config_bp.route("/api/config/prefixos-full/<path:prefixo>", methods=["PUT"])
+@login_required
+@requer_admin
+def api_prefixo_full_edit(prefixo: str):
+    _csrf()
+    data = request.get_json(silent=True) or {}
+    prefixo_novo = (data.get("prefixo_novo") or prefixo).strip().upper()
+    conta = (data.get("conta") or "").strip()
+    if not prefixo_novo or not conta:
+        return jsonify({"sucesso": False, "mensagem": "Prefixo e coluna são obrigatórios."}), 400
+    g = _gerenciador()
+    cfg = _config_app()
+    if cfg:
+        g.inicializar_mapa_prefixo_full_de_efetivo(dict(getattr(cfg, "mapa_prefixo_conta_full", {})))
+    g.atualizar_prefixo_full(prefixo, prefixo_novo, conta)
+    _reaplica_config()
+    return jsonify({"sucesso": True, "estado": _snapshot()})
+
+
+@config_bp.route("/api/config/prefixos-full/<path:prefixo>", methods=["DELETE"])
+@login_required
+@requer_admin
+def api_prefixo_full_del(prefixo: str):
+    _csrf()
+    g = _gerenciador()
+    cfg = _config_app()
+    if cfg:
+        g.inicializar_mapa_prefixo_full_de_efetivo(dict(getattr(cfg, "mapa_prefixo_conta_full", {})))
+    g.remover_prefixo_full(prefixo)
     _reaplica_config()
     return jsonify({"sucesso": True, "estado": _snapshot()})
 

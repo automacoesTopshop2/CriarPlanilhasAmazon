@@ -89,12 +89,23 @@
     const inputPrefixoEditNome = document.getElementById('prefixo-edit-nome');
     const inputPrefixoEditConta = document.getElementById('prefixo-edit-conta');
     const inputPrefixoEditOriginal = document.getElementById('prefixo-edit-original');
+    const inputPrefixoEditMapa = document.getElementById('prefixo-edit-mapa');
+    const lblPrefixoModalidade = document.getElementById('prefixo-edit-modalidade-lbl');
 
-    function abrirModalPrefixo(prefixo, conta) {
+    // Endpoint por modalidade: 'normal' -> /prefixos ; 'full' -> /prefixos-full
+    function endpointPrefixo(mapa) {
+        return mapa === 'full' ? '/api/config/prefixos-full' : '/api/config/prefixos';
+    }
+
+    function abrirModalPrefixo(prefixo, conta, mapa) {
+        mapa = mapa === 'full' ? 'full' : 'normal';
         modalPrefixo.hidden = false;
         inputPrefixoEditNome.value = prefixo || '';
         inputPrefixoEditConta.value = conta || '';
         inputPrefixoEditOriginal.value = prefixo || '';
+        if (inputPrefixoEditMapa) inputPrefixoEditMapa.value = mapa;
+        if (lblPrefixoModalidade) lblPrefixoModalidade.textContent =
+            mapa === 'full' ? '— Modalidade FULL (CLA)' : '— Modelo Normal';
     }
 
     function fecharModalPrefixo() { modalPrefixo.hidden = true; }
@@ -105,8 +116,9 @@
         const prefixoOriginal = inputPrefixoEditOriginal.value;
         const prefixoNovo = inputPrefixoEditNome.value.trim().toUpperCase();
         const conta = inputPrefixoEditConta.value.trim();
-        if (!prefixoNovo || !conta) { toast('Prefixo e conta são obrigatórios.', false); return; }
-        const r = await api('/api/config/prefixos/' + encodeURIComponent(prefixoOriginal), {
+        const mapa = inputPrefixoEditMapa ? inputPrefixoEditMapa.value : 'normal';
+        if (!prefixoNovo || !conta) { toast('Prefixo e coluna são obrigatórios.', false); return; }
+        const r = await api(endpointPrefixo(mapa) + '/' + encodeURIComponent(prefixoOriginal), {
             method: 'PUT',
             body: { prefixo_novo: prefixoNovo, conta },
         });
@@ -180,17 +192,20 @@
             if (r.ok) { toast('Removido.', true); location.reload(); }
             else toast(r.data.mensagem || 'Falha.', false);
         }
-        else if (action === 'editar-prefixo') {
+        else if (action === 'editar-prefixo' || action === 'editar-prefixo-full') {
             const tr = btn.closest('tr');
             const pref = tr.getAttribute('data-prefixo');
             const conta = tr.getAttribute('data-conta');
-            abrirModalPrefixo(pref, conta);
+            const mapa = tr.getAttribute('data-mapa') || 'normal';
+            abrirModalPrefixo(pref, conta, mapa);
         }
-        else if (action === 'remover-prefixo') {
+        else if (action === 'remover-prefixo' || action === 'remover-prefixo-full') {
             const tr = btn.closest('tr');
             const pref = tr.getAttribute('data-prefixo');
-            if (!confirm(`Remover prefixo "${pref}"?`)) return;
-            const r = await api('/api/config/prefixos/' + encodeURIComponent(pref), { method: 'DELETE' });
+            const mapa = tr.getAttribute('data-mapa') || 'normal';
+            const rotulo = mapa === 'full' ? ' (FULL)' : '';
+            if (!confirm(`Remover prefixo "${pref}"${rotulo}?`)) return;
+            const r = await api(endpointPrefixo(mapa) + '/' + encodeURIComponent(pref), { method: 'DELETE' });
             if (r.ok) { toast('Removido.', true); location.reload(); }
             else toast(r.data.mensagem || 'Falha.', false);
         }
@@ -252,7 +267,17 @@
         const conta = document.getElementById('input-conta').value.trim();
         if (!prefixo || !conta) { toast('Prefixo e conta são obrigatórios.', false); return; }
         const r = await api('/api/config/prefixos', { method: 'POST', body: { prefixo, conta } });
-        if (r.ok) { toast('Prefixo adicionado.', true); location.reload(); }
+        if (r.ok) { toast('Prefixo adicionado (Normal).', true); location.reload(); }
+        else toast(r.data.mensagem || 'Falha.', false);
+    });
+
+    document.getElementById('form-novo-prefixo-full')?.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const prefixo = document.getElementById('input-prefixo-full').value.trim().toUpperCase();
+        const conta = document.getElementById('input-conta-full').value.trim();
+        if (!prefixo || !conta) { toast('Prefixo e coluna são obrigatórios.', false); return; }
+        const r = await api('/api/config/prefixos-full', { method: 'POST', body: { prefixo, conta } });
+        if (r.ok) { toast('Prefixo adicionado (FULL).', true); location.reload(); }
         else toast(r.data.mensagem || 'Falha.', false);
     });
 

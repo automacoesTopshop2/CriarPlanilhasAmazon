@@ -62,8 +62,10 @@ class GerenciadorConfig:
         # Mapas editáveis via UI admin (vazio = usa default de config.py)
         "mapa_colunas_descricao": {},      # { "sku": ["SKU", ...], "titulo": [...], ... }
         "mapa_colunas_excluidos": [],      # chaves inteiras removidas via painel
-        "mapa_prefixo_conta": {},          # { "NOGO-": "Nogora", ... }
+        "mapa_prefixo_conta": {},          # { "NOGO-": "Nogora", ... } (modelo normal)
         "prefixos_excluidos": [],          # prefixos removidos via painel
+        "mapa_prefixo_conta_full": {},     # { "BOX-CLA-": "Box2Brasil", ... } (modalidade FULL)
+        "prefixos_full_excluidos": [],     # prefixos FULL removidos via painel
         "mapa_colunas_precificacao": {},   # { "sku": ["SKU", ...], "preco_padrao": [...] }
         "mapa_precificacao_excluidos": [], # chaves inteiras removidas via painel
     }
@@ -264,52 +266,48 @@ class GerenciadorConfig:
             excluidos.append(chave_logica)
             self.set("mapa_colunas_excluidos", excluidos)
 
-    # ---- mapa_prefixo_conta ----
+    # ---- mapa_prefixo_conta (helpers parametrizados: normal + FULL) ----
+    # As duas modalidades usam a MESMA lógica; só mudam as chaves no JSON.
+    #   normal -> ("mapa_prefixo_conta",      "prefixos_excluidos")
+    #   FULL   -> ("mapa_prefixo_conta_full", "prefixos_full_excluidos")
 
-    def mapa_prefixo_conta(self) -> Dict[str, str]:
-        return dict(self.dados.get("mapa_prefixo_conta", {}))
+    def _get_mapa_prefixo(self, chave_mapa: str) -> Dict[str, str]:
+        return dict(self.dados.get(chave_mapa, {}))
 
-    def definir_mapa_prefixo(self, mapa: Dict[str, str]) -> None:
+    def _set_mapa_prefixo(self, chave_mapa: str, mapa: Dict[str, str]) -> None:
         limpo = {
             (k or "").strip().upper(): (v or "").strip()
             for k, v in (mapa or {}).items()
             if k and k.strip() and v and v.strip()
         }
-        self.set("mapa_prefixo_conta", limpo)
+        self.set(chave_mapa, limpo)
 
-    def adicionar_prefixo(self, prefixo: str, conta: str) -> None:
+    def _add_prefixo(self, chave_mapa: str, chave_excl: str, prefixo: str, conta: str) -> None:
         prefixo = (prefixo or "").strip().upper()
         conta = (conta or "").strip()
         if not prefixo or not conta:
             return
         if not prefixo.endswith("-"):
             prefixo = prefixo + "-"
-        atual = self.mapa_prefixo_conta()
+        atual = self._get_mapa_prefixo(chave_mapa)
         atual[prefixo] = conta
-        self.definir_mapa_prefixo(atual)
-        # Remove da lista de exclusões caso tenha sido deletado antes
-        excluidos = [p for p in self.dados.get("prefixos_excluidos", []) if p != prefixo]
-        self.dados["prefixos_excluidos"] = excluidos
+        self._set_mapa_prefixo(chave_mapa, atual)
+        excluidos = [p for p in self.dados.get(chave_excl, []) if p != prefixo]
+        self.dados[chave_excl] = excluidos
         self.salvar()
 
-    def remover_prefixo(self, prefixo: str) -> None:
-        atual = self.mapa_prefixo_conta()
+    def _rem_prefixo(self, chave_mapa: str, chave_excl: str, prefixo: str) -> None:
+        atual = self._get_mapa_prefixo(chave_mapa)
         if prefixo in atual:
             del atual[prefixo]
-            self.definir_mapa_prefixo(atual)
-        excluidos = list(self.dados.get("prefixos_excluidos", []))
+            self._set_mapa_prefixo(chave_mapa, atual)
+        excluidos = list(self.dados.get(chave_excl, []))
         if prefixo not in excluidos:
             excluidos.append(prefixo)
-            self.set("prefixos_excluidos", excluidos)
+            self.set(chave_excl, excluidos)
 
-    def atualizar_prefixo(self, prefixo_antigo: str, prefixo_novo: str, conta: str) -> None:  # noqa: E501
-        """
-        Atualiza um prefixo existente. Se `prefixo_novo` for diferente de
-        `prefixo_antigo`, remove a entrada antiga e cria a nova.
-
-        Funciona tanto para prefixos customizados quanto para padrão:
-        editar um padrão cria um override no JSON com o mesmo (ou novo) nome.
-        """
+    def _upd_prefixo(self, chave_mapa: str, chave_excl: str,
+                     prefixo_antigo: str, prefixo_novo: str, conta: str) -> None:
         prefixo_antigo = (prefixo_antigo or "").strip().upper()
         prefixo_novo = (prefixo_novo or "").strip().upper()
         conta = (conta or "").strip()
@@ -317,18 +315,57 @@ class GerenciadorConfig:
             return
         if not prefixo_novo.endswith("-"):
             prefixo_novo = prefixo_novo + "-"
-        atual = self.mapa_prefixo_conta()
+        atual = self._get_mapa_prefixo(chave_mapa)
         if prefixo_antigo and prefixo_antigo != prefixo_novo and prefixo_antigo in atual:
             del atual[prefixo_antigo]
         atual[prefixo_novo] = conta
-        self.definir_mapa_prefixo(atual)
-        # Se o antigo foi excluído antes, mantém exclusão; remove o novo das exclusões
-        excluidos = list(self.dados.get("prefixos_excluidos", []))
+        self._set_mapa_prefixo(chave_mapa, atual)
+        excluidos = list(self.dados.get(chave_excl, []))
         if prefixo_antigo and prefixo_antigo != prefixo_novo and prefixo_antigo not in excluidos:
             excluidos.append(prefixo_antigo)
         excluidos = [p for p in excluidos if p != prefixo_novo]
-        self.dados["prefixos_excluidos"] = excluidos
+        self.dados[chave_excl] = excluidos
         self.salvar()
+
+    # -- API pública: modelo NORMAL --
+    def mapa_prefixo_conta(self) -> Dict[str, str]:
+        return self._get_mapa_prefixo("mapa_prefixo_conta")
+
+    def definir_mapa_prefixo(self, mapa: Dict[str, str]) -> None:
+        self._set_mapa_prefixo("mapa_prefixo_conta", mapa)
+
+    def adicionar_prefixo(self, prefixo: str, conta: str) -> None:
+        self._add_prefixo("mapa_prefixo_conta", "prefixos_excluidos", prefixo, conta)
+
+    def remover_prefixo(self, prefixo: str) -> None:
+        self._rem_prefixo("mapa_prefixo_conta", "prefixos_excluidos", prefixo)
+
+    def atualizar_prefixo(self, prefixo_antigo: str, prefixo_novo: str, conta: str) -> None:
+        self._upd_prefixo("mapa_prefixo_conta", "prefixos_excluidos",
+                          prefixo_antigo, prefixo_novo, conta)
+
+    # -- API pública: modalidade FULL (CLA) --
+    def mapa_prefixo_conta_full(self) -> Dict[str, str]:
+        return self._get_mapa_prefixo("mapa_prefixo_conta_full")
+
+    def definir_mapa_prefixo_full(self, mapa: Dict[str, str]) -> None:
+        self._set_mapa_prefixo("mapa_prefixo_conta_full", mapa)
+
+    def adicionar_prefixo_full(self, prefixo: str, conta: str) -> None:
+        self._add_prefixo("mapa_prefixo_conta_full", "prefixos_full_excluidos", prefixo, conta)
+
+    def remover_prefixo_full(self, prefixo: str) -> None:
+        self._rem_prefixo("mapa_prefixo_conta_full", "prefixos_full_excluidos", prefixo)
+
+    def atualizar_prefixo_full(self, prefixo_antigo: str, prefixo_novo: str, conta: str) -> None:
+        self._upd_prefixo("mapa_prefixo_conta_full", "prefixos_full_excluidos",
+                          prefixo_antigo, prefixo_novo, conta)
+
+    def inicializar_mapa_prefixo_full_de_efetivo(self, efetivo: Dict[str, str]) -> None:
+        atual = self.mapa_prefixo_conta_full()
+        completo = dict(efetivo)
+        completo.update(atual)
+        self.definir_mapa_prefixo_full(completo)
 
     # ---- mapa_colunas_precificacao ----
 

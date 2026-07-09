@@ -171,8 +171,15 @@ class Configuracoes:
         "RAQ-CLA-":   "Raquena",
         "TECH-CLA-":  "Tech Place",
         "VIANN-CLA-": "Vianney",
-        "VERD-CLA-":  "Verdal",   # sem coluna ainda -> preço vazio
-        "TACN-CLA-":  "Tacnar",   # sem coluna ainda -> preço vazio
+        "VERD-CLA-":  "Verdal",
+        "TACN-CLA-":  "Tacnar",   # casa com a coluna "TACNAR" (comparação sem acento/caixa)
+        # Contas novas (colunas já existem na Precificação Full). O prefixo CLA
+        # segue o padrão marca+"-CLA-"; ajuste via Admin se a conta for criada no
+        # BDAmazon com prefixo diferente. Enquanto a conta CLA não existir no
+        # BDAmazon, ela não aparece no dropdown (ver [[contas_codigo_externo_filtro]]).
+        "LUMA-CLA-":  "Lumar",
+        "NEXT-CLA-":  "Nextrade",
+        "PARE-CLA-":  "Paresi",
     })
 
     # -------------------------------------------------------------------------
@@ -380,6 +387,17 @@ class Configuracoes:
                 self.mapa_prefixo_conta[prefixo] = conta
         for prefixo in gerenciador.get("prefixos_excluidos", []):
             self.mapa_prefixo_conta.pop(prefixo, None)
+
+        # Override de mapa de prefixo→coluna da Modalidade FULL (isolado do normal)
+        try:
+            mapa_prefixo_full = gerenciador.mapa_prefixo_conta_full()
+        except AttributeError:
+            mapa_prefixo_full = {}
+        if mapa_prefixo_full:
+            for prefixo, conta in mapa_prefixo_full.items():
+                self.mapa_prefixo_conta_full[prefixo] = conta
+        for prefixo in gerenciador.get("prefixos_full_excluidos", []):
+            self.mapa_prefixo_conta_full.pop(prefixo, None)
 
         # Override de mapa de colunas da Precificação
         try:
