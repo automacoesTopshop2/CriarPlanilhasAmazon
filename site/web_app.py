@@ -968,6 +968,85 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
             ],
         })
 
+    # --------------------------- API: criar CONTA no BDAmazon -------------------
+    _MODALIDADE_CANAL = {"normal": "BASE", "full": "CLA", "b2b": "B2B"}
+
+    @app.route("/api/bdamazon/criar-conta", methods=["POST"])
+    @login_required
+    def api_bdamazon_criar_conta():
+        """Cria uma conta no BDAmazon E registra o mapa prefixo→coluna no nosso
+        config, na modalidade certa (FULL→mapa FULL; Normal/B2B→mapa normal).
+        Assim o operador cadastra a conta uma vez e o sistema já fica pronto.
+
+        Campos: modalidade (normal|full|b2b), nome (completo), nome_precificacao
+        (nome da coluna na planilha de preços — usado como marca no BDAmazon e
+        como coluna no nosso mapa) e prefixo (ex.: LUMA-CLA-)."""
+        if not (os.getenv("BDAMAZON_API_KEY") or "").strip():
+            return jsonify({"sucesso": False,
+                            "mensagem": "BDAMAZON_API_KEY não configurada no servidor.",
+                            "detalhe": "env var BDAMAZON_API_KEY ausente"}), 503
+
+        data = request.get_json(silent=True) or {}
+        modalidade = (data.get("modalidade") or "").strip().lower()
+        nome = (data.get("nome") or "").strip()
+        coluna = (data.get("nome_precificacao") or "").strip()
+        prefixo = (data.get("prefixo") or "").strip().upper()
+        tipo_canal = _MODALIDADE_CANAL.get(modalidade)
+        if not (nome and coluna and prefixo and tipo_canal):
+            return jsonify({"sucesso": False, "mensagem": (
+                "Informe modalidade (normal/full/b2b), nome, nome na precificação "
+                "e prefixo.")}), 400
+        if not prefixo.endswith("-"):
+            prefixo += "-"
+
+        # 1) Cria no BDAmazon (409 = já existe → segue e só registra o mapa local).
+        conta_info, ja_existia = None, False
+        try:
+            conta = bdamazon_client.criar_conta(
+                nome=nome, marca=coluna, tipo_canal=tipo_canal, prefixo_sku=prefixo)
+            conta_info = {"codigo": conta.codigo, "nome": conta.nome,
+                          "tipo_canal": conta.tipo_canal, "prefixo_sku": conta.prefixo_sku}
+        except bdamazon_client.BDAmazonAuthError as e:
+            return jsonify({"sucesso": False, "mensagem": "BDAmazon recusou a autenticação.",
+                            "detalhe": str(e)}), 502
+        except bdamazon_client.BDAmazonRateLimitError as e:
+            return jsonify({"sucesso": False, "mensagem": "Rate-limit do BDAmazon. Aguarde.",
+                            "detalhe": str(e)}), 429
+        except bdamazon_client.BDAmazonError as e:
+            if getattr(e, "status", None) == 409:
+                ja_existia = True  # conta já existe no BDAmazon — ok, registra o mapa
+            else:
+                app.logger.error("Falha no BDAmazon /contas: %s", e)
+                return jsonify({"sucesso": False,
+                                "mensagem": "Falha ao criar conta no BDAmazon.",
+                                "detalhe": str(e)}), 502
+
+        # 2) Registra o mapa prefixo→coluna no nosso config (modalidade correta).
+        gerenciador = app.config.get("CONFIG_MANAGER")
+        cfg_atual = app.config.get("APP_CONFIG", config)
+        aviso = None
+        try:
+            if modalidade == "full":
+                gerenciador.adicionar_prefixo_full(prefixo, coluna)
+            else:
+                gerenciador.adicionar_prefixo(prefixo, coluna)
+            if cfg_atual:
+                cfg_atual.aplicar_gerenciador(gerenciador)
+        except Exception as e:
+            aviso = f"Conta ok no BDAmazon, mas falhou ao registrar o mapa local: {e}"
+            app.logger.error(aviso)
+
+        mensagem = (
+            "Conta já existia no BDAmazon; mapa de preço atualizado aqui."
+            if ja_existia else
+            "Conta criada no BDAmazon e mapa de preço registrado aqui."
+        )
+        if ja_existia and not conta_info:
+            conta_info = {"codigo": prefixo.rstrip("-"), "nome": nome,
+                          "tipo_canal": tipo_canal, "prefixo_sku": prefixo}
+        return jsonify({"sucesso": True, "mensagem": mensagem, "conta": conta_info,
+                        "modalidade": modalidade, "coluna": coluna, "aviso": aviso})
+
     # --------------------------- API: criar 1 SKU no BDAmazon -------------------
     @app.route("/api/bdamazon/criar-sku", methods=["POST"])
     @login_required

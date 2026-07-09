@@ -221,6 +221,35 @@ def listar_contas() -> List[Conta]:
     return [Conta.from_dict(item) for item in data]
 
 
+def criar_conta(
+    *,
+    nome: str,
+    marca: str,
+    tipo_canal: str,
+    prefixo_sku: str,
+    codigo_externo: Optional[str] = None,
+    observacao: Optional[str] = None,
+) -> Conta:
+    """POST /api/v1/contas — cria uma conta nova e devolve os dados persistidos.
+
+    `tipo_canal`: BASE | B2B | CLA | FBA | DBA.
+    `codigo_externo` é opcional — o servidor deriva do prefixo (sem o "-" final)
+    quando ausente. Levanta BDAmazonError em caso de conflito/erro.
+    """
+    body: dict = {
+        "nome": nome,
+        "marca": marca,
+        "tipo_canal": tipo_canal,
+        "prefixo_sku": prefixo_sku,
+    }
+    if codigo_externo:
+        body["codigo_externo"] = codigo_externo
+    if observacao:
+        body["observacao"] = observacao
+    data = _request("POST", "/contas", json_body=body)
+    return Conta.from_dict(data)
+
+
 def criar_sku(
     *,
     conta_codigo: str,

@@ -355,6 +355,66 @@ def test_criar_sku_devolve_sku_market(client, app, monkeypatch):
     assert chamadas[0]["usuario_codigo"] == "joao.silva"
 
 
+def test_criar_conta_full_registra_mapa(client, app, login_usuario, monkeypatch):
+    """POST /criar-conta (modalidade full) cria no BDAmazon E registra o
+    prefixo→coluna no mapa FULL (sem vazar para o mapa normal)."""
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
+    conta_fake = bdamazon_client.Conta(
+        codigo="LUMA-CLA", nome="LUMAR CLA", marca="Lumar",
+        tipo_canal="CLA", prefixo_sku="LUMA-CLA-",
+    )
+    chamadas = []
+
+    def fake(**kwargs):
+        chamadas.append(kwargs)
+        return conta_fake
+
+    with patch("core.bdamazon_client.criar_conta", side_effect=fake):
+        r = client.post("/api/bdamazon/criar-conta", json={
+            "modalidade": "full", "prefixo": "LUMA-CLA-",
+            "nome": "LUMAR CLA", "nome_precificacao": "Lumar",
+        })
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = r.get_json()
+    assert body["sucesso"] is True
+    assert chamadas[0]["tipo_canal"] == "CLA"
+    assert chamadas[0]["marca"] == "Lumar"           # marca = nome na precificação
+    assert chamadas[0]["prefixo_sku"] == "LUMA-CLA-"
+    g = app.config["CONFIG_MANAGER"]
+    assert g.mapa_prefixo_conta_full().get("LUMA-CLA-") == "Lumar"
+    assert "LUMA-CLA-" not in g.mapa_prefixo_conta()  # não vaza p/ o normal
+
+
+def test_criar_conta_normal_vai_pro_mapa_normal(client, app, login_usuario, monkeypatch):
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
+    conta_fake = bdamazon_client.Conta(
+        codigo="ACME", nome="ACME LTDA", marca="Acme",
+        tipo_canal="BASE", prefixo_sku="ACME-",
+    )
+    with patch("core.bdamazon_client.criar_conta", return_value=conta_fake):
+        r = client.post("/api/bdamazon/criar-conta", json={
+            "modalidade": "normal", "prefixo": "ACME-",
+            "nome": "ACME LTDA", "nome_precificacao": "Acme",
+        })
+    assert r.status_code == 200, r.get_data(as_text=True)
+    g = app.config["CONFIG_MANAGER"]
+    assert g.mapa_prefixo_conta().get("ACME-") == "Acme"
+    assert "ACME-" not in g.mapa_prefixo_conta_full()
+
+
+def test_criar_conta_campos_obrigatorios(client, login_usuario, monkeypatch):
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
+    r = client.post("/api/bdamazon/criar-conta", json={"modalidade": "full"})
+    assert r.status_code == 400
+
+
+def test_criar_conta_sem_api_key_503(client, login_usuario, monkeypatch):
+    monkeypatch.delenv("BDAMAZON_API_KEY", raising=False)
+    r = client.post("/api/bdamazon/criar-conta", json={
+        "modalidade": "full", "prefixo": "X-CLA-", "nome": "X", "nome_precificacao": "X"})
+    assert r.status_code == 503
+
+
 def test_criar_sku_com_asin_envia_para_api(client, app, monkeypatch):
     """Modo ASIN: o asin deve ser propagado para o POST /skus do BDAmazon."""
     monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")

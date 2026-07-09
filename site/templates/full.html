@@ -59,6 +59,47 @@
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                     Atualizar contas
                 </button>
+                <button type="button" class="btn btn--sm btn--dark" id="btn-nova-conta" title="Cadastrar uma conta nova (cria no BDAmazon e já prepara a precificação aqui)">
+                    + Nova conta
+                </button>
+            </div>
+        </div>
+
+        <!-- Cadastro de conta nova (BDAmazon + mapa de precificação) -->
+        <div class="card mt-3 hide" id="card-nova-conta">
+            <div class="card__body">
+                <div class="fw-600">Cadastrar conta nova</div>
+                <div class="text-muted text-sm mt-2 mb-3">
+                    Cria a conta no BDAmazon <strong>e</strong> registra o prefixo → coluna de preço aqui,
+                    na modalidade escolhida. A <strong>coluna de preço</strong> deve existir na planilha da modalidade.
+                </div>
+                <div class="grid grid--2">
+                    <div class="field">
+                        <label class="label" for="nc-modalidade">Modalidade</label>
+                        <select id="nc-modalidade" class="select">
+                            <option value="full">FULL / CLA</option>
+                            <option value="normal">Normal</option>
+                            <option value="b2b">B2B</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="nc-prefixo">Prefixo do SKU</label>
+                        <input id="nc-prefixo" class="select" placeholder="ex.: LUMA-CLA-">
+                    </div>
+                    <div class="field">
+                        <label class="label" for="nc-nome">Nome completo da conta</label>
+                        <input id="nc-nome" class="select" placeholder="ex.: LUMAR COMERCIO CLA">
+                    </div>
+                    <div class="field">
+                        <label class="label" for="nc-coluna">Nome na tabela de precificação (coluna)</label>
+                        <input id="nc-coluna" class="select" placeholder="ex.: Lumar">
+                    </div>
+                </div>
+                <div class="manual-actions mt-3">
+                    <button type="button" class="btn btn--sm btn--primary" id="btn-nc-salvar">Criar conta</button>
+                    <button type="button" class="btn btn--sm btn--ghost" id="btn-nc-cancelar">cancelar</button>
+                    <span id="nc-msg" class="card__sub" style="margin-left:8px"></span>
+                </div>
             </div>
         </div>
 
@@ -147,5 +188,51 @@
         comMarcaEan: false,
         filtroTipoCanal: "CLA",
     });
+
+    // ---- Cadastro de conta nova (BDAmazon + mapa de precificação) ----
+    (function () {
+        var card = document.getElementById('card-nova-conta');
+        var btnAbrir = document.getElementById('btn-nova-conta');
+        var btnCancelar = document.getElementById('btn-nc-cancelar');
+        var btnSalvar = document.getElementById('btn-nc-salvar');
+        var msg = document.getElementById('nc-msg');
+        if (!card || !btnAbrir) return;
+
+        btnAbrir.addEventListener('click', function () { card.classList.toggle('hide'); });
+        btnCancelar.addEventListener('click', function () { card.classList.add('hide'); });
+
+        btnSalvar.addEventListener('click', function () {
+            var payload = {
+                modalidade: document.getElementById('nc-modalidade').value,
+                prefixo: (document.getElementById('nc-prefixo').value || '').trim(),
+                nome: (document.getElementById('nc-nome').value || '').trim(),
+                nome_precificacao: (document.getElementById('nc-coluna').value || '').trim(),
+            };
+            if (!payload.prefixo || !payload.nome || !payload.nome_precificacao) {
+                msg.textContent = 'Preencha prefixo, nome e coluna de preço.';
+                return;
+            }
+            btnSalvar.disabled = true;
+            msg.textContent = 'Criando…';
+            fetch("{{ url_for('api_bdamazon_criar_conta') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': window.csrf ? window.csrf() : '' },
+                body: JSON.stringify(payload),
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    btnSalvar.disabled = false;
+                    if (!data.sucesso) { msg.textContent = '✗ ' + (data.mensagem || 'Falha') + (data.detalhe ? ' — ' + data.detalhe : ''); return; }
+                    msg.textContent = '✓ ' + (data.mensagem || 'Conta criada.') + (data.aviso ? ' (' + data.aviso + ')' : '');
+                    // Limpa e atualiza o dropdown (a conta nova já aparece se for CLA).
+                    document.getElementById('nc-prefixo').value = '';
+                    document.getElementById('nc-nome').value = '';
+                    document.getElementById('nc-coluna').value = '';
+                    var refresh = document.getElementById('btn-refresh-contas');
+                    if (refresh) refresh.click();
+                })
+                .catch(function (e) { btnSalvar.disabled = false; msg.textContent = '✗ ' + e; });
+        });
+    })();
 </script>
 {% endblock %}
