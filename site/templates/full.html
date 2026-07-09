@@ -71,7 +71,22 @@
                 <div class="fw-600">Cadastrar conta nova</div>
                 <div class="text-muted text-sm mt-2 mb-3">
                     Cria a conta no BDAmazon <strong>e</strong> registra o prefixo → coluna de preço aqui,
-                    na modalidade escolhida. A <strong>coluna de preço</strong> deve existir na planilha da modalidade.
+                    na modalidade escolhida.
+                </div>
+                <div class="card__body info-card-row" style="background:rgba(234,179,8,.08);border-radius:8px;padding:10px 12px;margin-bottom:12px">
+                    <div class="info-card-icon">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    </div>
+                    <div class="text-sm">
+                        <div class="fw-600">Se der o erro "já existe" (409), quase sempre é um destes:</div>
+                        <div class="text-muted mt-2">
+                            • <strong>Prefixo sem o sufixo da modalidade.</strong> FULL/CLA termina em <code>-CLA-</code>
+                            (ex.: <code>NEXT-CLA-</code>) — <strong>diferente</strong> do prefixo da conta BASE de mesma marca (<code>NEXT-</code>).<br>
+                            • <strong>Nome igual ao de outra conta.</strong> O nome completo não pode repetir o de uma conta existente
+                            (ex.: a BASE "NEXTRADE COMERCIO"). Dica: inclua "CLA" no nome (ex.: <code>Nextrade Comércio CLA</code>).<br>
+                            • A <strong>coluna de preço</strong> informada precisa existir na planilha da modalidade.
+                        </div>
+                    </div>
                 </div>
                 <div class="grid grid--2">
                     <div class="field">
