@@ -402,6 +402,22 @@ def test_criar_conta_normal_vai_pro_mapa_normal(client, app, login_usuario, monk
     assert "ACME-" not in g.mapa_prefixo_conta_full()
 
 
+def test_criar_conta_409_conflito_erro_claro(client, app, login_usuario, monkeypatch):
+    """409 (nome/prefixo/código já em uso) NÃO é sucesso — devolve erro claro
+    e NÃO registra o mapa local (pode ter colidido com outra conta)."""
+    monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
+    err = bdamazon_client.BDAmazonError("conta já existe", status=409)
+    with patch("core.bdamazon_client.criar_conta", side_effect=err):
+        r = client.post("/api/bdamazon/criar-conta", json={
+            "modalidade": "full", "prefixo": "DUP-CLA-",
+            "nome": "Dup", "nome_precificacao": "Dup",
+        })
+    assert r.status_code == 409, r.get_data(as_text=True)
+    assert r.get_json()["sucesso"] is False
+    g = app.config["CONFIG_MANAGER"]
+    assert "DUP-CLA-" not in g.mapa_prefixo_conta_full()  # não registrou no conflito
+
+
 def test_criar_conta_campos_obrigatorios(client, login_usuario, monkeypatch):
     monkeypatch.setenv("BDAMAZON_API_KEY", "bdamz_test_token")
     r = client.post("/api/bdamazon/criar-conta", json={"modalidade": "full"})

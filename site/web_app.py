@@ -999,8 +999,8 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
         if not prefixo.endswith("-"):
             prefixo += "-"
 
-        # 1) Cria no BDAmazon (409 = já existe → segue e só registra o mapa local).
-        conta_info, ja_existia = None, False
+        # 1) Cria no BDAmazon (409 = conflito → erro claro, não é sucesso).
+        conta_info = None
         try:
             conta = bdamazon_client.criar_conta(
                 nome=nome, marca=coluna, tipo_canal=tipo_canal, prefixo_sku=prefixo)
@@ -1014,14 +1014,21 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
                             "detalhe": str(e)}), 429
         except bdamazon_client.BDAmazonError as e:
             if getattr(e, "status", None) == 409:
-                ja_existia = True  # conta já existe no BDAmazon — ok, registra o mapa
-            else:
-                app.logger.error("Falha no BDAmazon /contas: %s", e)
-                return jsonify({"sucesso": False,
-                                "mensagem": "Falha ao criar conta no BDAmazon.",
-                                "detalhe": str(e)}), 502
+                # Conflito de único (nome, prefixo ou código já em uso). NÃO é
+                # sucesso: pode ser colisão com OUTRA conta (ex.: a BASE de mesma
+                # marca). Devolve erro claro para o operador ajustar os dados.
+                return jsonify({"sucesso": False, "mensagem": (
+                    f"Já existe uma conta no BDAmazon com esse nome, prefixo ({prefixo}) "
+                    f"ou código. Confira: o prefixo precisa do sufixo da modalidade "
+                    f"(ex.: NEXT-CLA-, não NEXT-) e o nome não pode ser igual ao de "
+                    f"outra conta."), "detalhe": str(e)}), 409
+            app.logger.error("Falha no BDAmazon /contas: %s", e)
+            return jsonify({"sucesso": False,
+                            "mensagem": "Falha ao criar conta no BDAmazon.",
+                            "detalhe": str(e)}), 502
 
-        # 2) Registra o mapa prefixo→coluna no nosso config (modalidade correta).
+        # 2) Só chega aqui se a conta foi realmente CRIADA. Registra o mapa
+        #    prefixo→coluna no nosso config (modalidade correta).
         gerenciador = app.config.get("CONFIG_MANAGER")
         cfg_atual = app.config.get("APP_CONFIG", config)
         aviso = None
@@ -1033,19 +1040,13 @@ def _registrar_rotas_app(app: Flask, config: Configuracoes) -> None:
             if cfg_atual:
                 cfg_atual.aplicar_gerenciador(gerenciador)
         except Exception as e:
-            aviso = f"Conta ok no BDAmazon, mas falhou ao registrar o mapa local: {e}"
+            aviso = f"Conta criada no BDAmazon, mas falhou ao registrar o mapa local: {e}"
             app.logger.error(aviso)
 
-        mensagem = (
-            "Conta já existia no BDAmazon; mapa de preço atualizado aqui."
-            if ja_existia else
-            "Conta criada no BDAmazon e mapa de preço registrado aqui."
-        )
-        if ja_existia and not conta_info:
-            conta_info = {"codigo": prefixo.rstrip("-"), "nome": nome,
-                          "tipo_canal": tipo_canal, "prefixo_sku": prefixo}
-        return jsonify({"sucesso": True, "mensagem": mensagem, "conta": conta_info,
-                        "modalidade": modalidade, "coluna": coluna, "aviso": aviso})
+        return jsonify({"sucesso": True,
+                        "mensagem": "Conta criada no BDAmazon e mapa de preço registrado aqui.",
+                        "conta": conta_info, "modalidade": modalidade,
+                        "coluna": coluna, "aviso": aviso})
 
     # --------------------------- API: criar 1 SKU no BDAmazon -------------------
     @app.route("/api/bdamazon/criar-sku", methods=["POST"])
